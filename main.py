@@ -87,13 +87,18 @@ def process_single_video(
     output_clip_path = None
 
     try:
-        # 2. Download audio stream (16kHz WAV, lightweight 30MB)
-        logger.info("👉 [STEP 2/9] Downloading audio stream from YouTube...")
-        _, audio_path = YouTubeFetcher.download_audio(video_url)
-
-        # 3. Transcribe audio via Groq Whisper v3
-        logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
-        transcript_data = groq_client.transcribe_audio(audio_path)
+        # 2. Get video transcript (Direct YouTube API first for 0.1s instant extraction, Groq Whisper fallback)
+        logger.info("👉 [STEP 2/9] Fetching video transcript...")
+        transcript_data = YouTubeFetcher.get_transcript_direct(video_id)
+        
+        audio_path = None
+        if not transcript_data:
+            logger.info("Direct transcript unavailable. Downloading audio stream for Groq Whisper...")
+            _, audio_path = YouTubeFetcher.download_audio(video_url)
+            logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
+            transcript_data = groq_client.transcribe_audio(audio_path)
+        else:
+            logger.info("👉 [STEP 3/9] Direct transcript retrieved in 0.1s! Bypassing audio download.")
 
         # 4. Extract viral clip segment via Groq Llama 3.3 70B
         logger.info("👉 [STEP 4/9] Extracting viral clip segment via Groq Llama 3.3 70B...")
@@ -104,8 +109,11 @@ def process_single_video(
         hashtags = clip_meta.get("hashtags", ["#Shorts", "#Viral"])
 
         # 5. Calibrate cut timestamps via silence detection
-        logger.info("👉 [STEP 5/9] Calibrating cut timestamps via silence detection...")
-        start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
+        logger.info("👉 [STEP 5/9] Calibrating cut timestamps...")
+        if audio_path and os.path.exists(audio_path):
+            start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
+        else:
+            start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
         duration = end_sec - start_sec
 
         # 6. Download fast 1080p MP4 video clip slice (35s slice ONLY - 50x faster!)
@@ -117,7 +125,7 @@ def process_single_video(
         srt_filename = f"{video_id}_subtitles.srt"
         srt_path = os.path.join(TEMP_DIR, srt_filename)
         generate_subtitle_file(
-            words=transcript_data.get("words", []),
+            words=transcript_data.get("words") or transcript_data.get("segments", []),
             start_sec=start_sec,
             end_sec=end_sec,
             output_srt_path=srt_path

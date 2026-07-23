@@ -138,11 +138,13 @@ def generate_subtitle_file(
             # Shift timestamps relative to clip start
             rel_start = max(0.0, w_start - start_sec)
             rel_end = max(rel_start + 0.1, w_end - start_sec)
-            clip_words.append({
-                "word": str(w.get("word", "")).strip().upper(),
-                "start": rel_start,
-                "end": rel_end
-            })
+            word_val = str(w.get("word") or w.get("text") or "").strip().upper()
+            if word_val:
+                clip_words.append({
+                    "word": word_val,
+                    "start": rel_start,
+                    "end": rel_end
+                })
 
     # Group words into short 2-3 word high-retention subtitle groups
     sub_entries = []

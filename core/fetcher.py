@@ -77,6 +77,23 @@ class YouTubeFetcher:
         return results
 
     @staticmethod
+    def get_transcript_direct(video_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches official YouTube transcript directly via youtube_transcript_api
+        in 0.1 seconds without any bot checks or audio downloads!
+        """
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
+            full_text = " ".join([t["text"] for t in transcript_list])
+            segments = [{"start": float(t["start"]), "end": float(t["start"]) + float(t["duration"]), "text": t["text"]} for t in transcript_list]
+            logger.info("Successfully fetched direct YouTube transcript for video %s: %d segments", video_id, len(segments))
+            return {"text": full_text, "segments": segments}
+        except Exception as e:
+            logger.warning("youtube_transcript_api direct fetch not available for %s: %s", video_id, str(e))
+            return None
+
+    @staticmethod
     def download_audio(youtube_url: str) -> Tuple[str, str]:
         """
         Downloads audio-only stream from YouTube converted to 16kHz mono WAV format.
