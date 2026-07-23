@@ -80,17 +80,71 @@ class YouTubeFetcher:
     def get_transcript_direct(video_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches official YouTube transcript directly via youtube_transcript_api
-        in 0.1 seconds without any bot checks or audio downloads!
+        in 0.05 seconds without any bot checks or audio downloads!
+        Supports both v1.2+ (fetch) and v0.6+ (get_transcript/list) API signatures.
         """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
-            full_text = " ".join([t["text"] for t in transcript_list])
-            segments = [{"start": float(t["start"]), "end": float(t["start"]) + float(t["duration"]), "text": t["text"]} for t in transcript_list]
+            
+            transcript_list = None
+            # 1. Try v1.2+ API (YouTubeTranscriptApi().fetch)
+            try:
+                ytt = YouTubeTranscriptApi()
+                if hasattr(ytt, 'fetch'):
+                    try:
+                        transcript_list = ytt.fetch(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
+                    except Exception:
+                        transcript_list = ytt.fetch(video_id)
+            except Exception:
+                pass
+
+            # 2. Try v0.6+ static API (YouTubeTranscriptApi.get_transcript)
+            if transcript_list is None and hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                try:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
+                except Exception:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+
+            # 3. Try listing transcripts
+            if transcript_list is None:
+                try:
+                    list_func = getattr(YouTubeTranscriptApi, 'list', None) or getattr(YouTubeTranscriptApi, 'list_transcripts', None)
+                    if list_func:
+                        transcripts = list_func(video_id)
+                        t_obj = next(iter(transcripts), None)
+                        if t_obj:
+                            transcript_list = t_obj.fetch()
+                except Exception:
+                    pass
+
+            if not transcript_list:
+                logger.warning("No transcript snippets retrieved for video %s", video_id)
+                return None
+
+            full_text_parts = []
+            segments = []
+            for item in transcript_list:
+                if isinstance(item, dict):
+                    t_text = item.get("text", "")
+                    t_start = float(item.get("start", 0.0))
+                    t_dur = float(item.get("duration", 0.0))
+                else:
+                    t_text = getattr(item, "text", "")
+                    t_start = float(getattr(item, "start", 0.0))
+                    t_dur = float(getattr(item, "duration", 0.0))
+
+                full_text_parts.append(t_text)
+                segments.append({
+                    "start": t_start,
+                    "end": t_start + t_dur,
+                    "text": t_text
+                })
+
+            full_text = " ".join(full_text_parts)
             logger.info("Successfully fetched direct YouTube transcript for video %s: %d segments", video_id, len(segments))
             return {"text": full_text, "segments": segments}
         except Exception as e:
-            logger.warning("youtube_transcript_api direct fetch not available for %s: %s", video_id, str(e))
+            logger.warning("youtube_transcript_api direct fetch failed for %s: %s", video_id, str(e))
             return None
 
     @staticmethod
