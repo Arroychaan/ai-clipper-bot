@@ -21,22 +21,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: 📦 Install FFmpeg
         run: |
-          sudo apt update
-          sudo apt install -y ffmpeg
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
 
       - name: 📚 Install Dependencies & Playwright
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           playwright install chromium
           sudo playwright install-deps chromium
 
-      - name: 🔑 Configure Environment (Indonesia Market)
+      - name: 🚀 Run Indonesia Clipper Engine
         env:
+          SINGLE_RUN: "true"
           GROQ_KEY_1: ${{ secrets.GROQ_KEY_1 }}
           GROQ_KEY_2: ${{ secrets.GROQ_KEY_2 }}
           GROQ_KEY_3: ${{ secrets.GROQ_KEY_3 }}
@@ -47,33 +47,12 @@ jobs:
           GROQ_KEY_8: ${{ secrets.GROQ_KEY_8 }}
           GROQ_KEY_9: ${{ secrets.GROQ_KEY_9 }}
           GROQ_KEY_10: ${{ secrets.GROQ_KEY_10 }}
-          INDO_FEED_URL: ${{ secrets.INDO_FEED_URL }}
+          SOURCE_FEED_URL: ${{ secrets.INDO_FEED_URL || 'https://www.youtube.com/@RadityaDika/videos,https://www.youtube.com/@deddycorbuzier/videos,https://www.youtube.com/@DennySumargo/videos,https://www.youtube.com/@Vindes/videos,https://www.youtube.com/@agaklaenofficial/videos,https://www.youtube.com/@HASCreative/videos,https://www.youtube.com/@TuahKreasi/videos' }}
           YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_INDO_BASE64 || secrets.YOUTUBE_TOKEN_BASE64 }}
           TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_INDO_BASE64 || secrets.TIKTOK_COOKIES_BASE64 }}
           AFFILIATE_COMMENT_TEXT: ${{ secrets.AFFILIATE_COMMENT_TEXT }}
-        run: |
-          cat <<EOF > .env
-          GROQ_KEY_1=${GROQ_KEY_1}
-          GROQ_KEY_2=${GROQ_KEY_2}
-          GROQ_KEY_3=${GROQ_KEY_3}
-          GROQ_KEY_4=${GROQ_KEY_4}
-          GROQ_KEY_5=${GROQ_KEY_5}
-          GROQ_KEY_6=${GROQ_KEY_6}
-          GROQ_KEY_7=${GROQ_KEY_7}
-          GROQ_KEY_8=${GROQ_KEY_8}
-          GROQ_KEY_9=${GROQ_KEY_9}
-          GROQ_KEY_10=${GROQ_KEY_10}
-          SOURCE_FEED_URL=${INDO_FEED_URL:-https://www.youtube.com/@RadityaDika/videos,https://www.youtube.com/@deddycorbuzier/videos,https://www.youtube.com/@DennySumargo/videos,https://www.youtube.com/@Vindes/videos,https://www.youtube.com/@agaklaenofficial/videos,https://www.youtube.com/@HASCreative/videos,https://www.youtube.com/@TuahKreasi/videos}
-          YOUTUBE_TOKEN_BASE64=${YOUTUBE_TOKEN_BASE64}
-          TIKTOK_COOKIES_BASE64=${TIKTOK_COOKIES_BASE64}
-          AFFILIATE_COMMENT_TEXT=${AFFILIATE_COMMENT_TEXT}
-          TARGET_LANGUAGE=id
-          RAMPUP_MODE=true
-          EOF
-
-      - name: 🚀 Run Indonesia Clipper Engine
-        env:
-          SINGLE_RUN: "true"
+          TARGET_LANGUAGE: "id"
+          RAMPUP_MODE: "true"
         run: |
           python main.py
 
