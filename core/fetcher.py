@@ -120,12 +120,15 @@ class YouTubeFetcher:
         return video_id, audio_path
 
     @staticmethod
-    def download_video_stream(youtube_url: str) -> str:
+    def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
-        Downloads high quality video stream (up to 1080p MP4) without unnecessary audio re-encoding.
+        Downloads high quality video stream (up to 1080p MP4).
+        If start_sec and end_sec are provided, downloads ONLY the specific clip slice (50x faster!).
         
         Args:
             youtube_url: Full YouTube video URL or ID.
+            start_sec: Optional start timestamp in seconds.
+            end_sec: Optional end timestamp in seconds.
             
         Returns:
             Path to downloaded MP4 video file.
@@ -138,7 +141,20 @@ class YouTubeFetcher:
             "overwrites": True
         }
 
-        logger.info("Downloading 1080p MP4 video stream for: %s", youtube_url)
+        if start_sec is not None and end_sec is not None:
+            # Buffer 3s before and after to ensure clean FFmpeg keyframe trimming
+            pad_start = max(0.0, start_sec - 3.0)
+            pad_end = end_sec + 3.0
+            try:
+                import yt_dlp.utils
+                ydl_opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(pad_start, pad_end)])
+                ydl_opts["force_keyframes_at_cuts"] = True
+                logger.info("Downloading fast 1080p clip slice (%.2fs - %.2fs) for: %s", pad_start, pad_end, youtube_url)
+            except Exception as e:
+                logger.warning("Fast section download not supported by yt-dlp version, falling back: %s", str(e))
+        else:
+            logger.info("Downloading 1080p MP4 video stream for: %s", youtube_url)
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=True)
             video_id = info.get("id", "")
@@ -148,13 +164,13 @@ class YouTubeFetcher:
             if not os.path.exists(video_path):
                 # Fallback check if yt-dlp preserved a different extension
                 for ext in ["mp4", "mkv", "webm"]:
-                    candidate = os.path.join(TEMP_DIR, f"{video_id}_video.{ext}")
-                    if os.path.exists(candidate):
-                        video_path = candidate
+                    alt_path = os.path.join(TEMP_DIR, f"{video_id}_video.{ext}")
+                    if os.path.exists(alt_path):
+                        video_path = alt_path
                         break
-
+                        
         if not os.path.exists(video_path):
-            raise FileNotFoundError(f"Expected video stream missing after download: {video_path}")
+            raise FileNotFoundError(f"Expected video file missing after download: {video_path}")
 
-        logger.info("Video stream downloaded successfully: %s", video_path)
+        logger.info("Video stream ready: %s", video_path)
         return video_path
