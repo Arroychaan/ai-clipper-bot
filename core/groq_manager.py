@@ -132,6 +132,10 @@ class ResilientGroqClient:
         
         timestamp_snippet = "\n".join(timestamped_summary[:50])
 
+        from config import TARGET_LANGUAGE
+
+        lang_instruction = "in Indonesian language (Bahasa Indonesia) using viral clickbait style" if TARGET_LANGUAGE == "id" else "in English language using viral clickbait style"
+
         system_prompt = f"""You are a master viral video editor specializing in YouTube Shorts and TikTok.
 Your mission is to find the single most engaging, high-retention clip from the provided speech transcript.
 
@@ -139,7 +143,8 @@ STRICT CRITERIA:
 1. Duration MUST be strictly between {MIN_CLIP_DURATION} seconds and {MAX_CLIP_DURATION} seconds.
 2. The clip MUST start with a strong 3-second hook (an intrigue, controversial statement, or punchy question).
 3. EXCLUDE all greetings, introductions, self-promotions, call-to-actions, or channel slogans.
-4. Output MUST be strict valid JSON ONLY, with NO extra markdown text, using exact format:
+4. Output title and hashtags {lang_instruction}.
+5. Output MUST be strict valid JSON ONLY, with NO extra markdown text, using exact format:
 {{
   "start_time": <float start timestamp in seconds>,
   "end_time": <float end timestamp in seconds>,

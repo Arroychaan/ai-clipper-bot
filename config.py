@@ -39,11 +39,12 @@ def _load_groq_keys() -> tuple[str, ...]:
 
 GROQ_KEYS: tuple[str, ...] = _load_groq_keys()
 
-# Target Video Specifications
+# Target Video & Language Specifications
 TARGET_WIDTH: int = 1080
 TARGET_HEIGHT: int = 1920
 MIN_CLIP_DURATION: float = 25.0
 MAX_CLIP_DURATION: float = 45.0
+TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "en").lower()  # 'en' for Global, 'id' for Indonesia market
 
 # Schedule & Ramp-Up Configuration
 RAMPUP_MODE: bool = os.getenv("RAMPUP_MODE", "true").lower() in ("true", "1", "t", "yes")

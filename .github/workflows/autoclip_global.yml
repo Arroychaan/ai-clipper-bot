@@ -1,0 +1,84 @@
+name: 🌍 AI Clipper Bot - Global Market Pipeline
+
+on:
+  schedule:
+    # Runs automatically every 8 hours (3 times a day: 00:00, 08:00, 16:00 UTC)
+    - cron: '0 */8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-global-clipper:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 📦 Install FFmpeg
+        run: |
+          sudo apt update
+          sudo apt install -y ffmpeg
+
+      - name: 📚 Install Dependencies & Playwright
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
+          sudo playwright install-deps chromium
+
+      - name: 🔑 Configure Environment (Global Market)
+        env:
+          GROQ_KEY_1: ${{ secrets.GROQ_KEY_1 }}
+          GROQ_KEY_2: ${{ secrets.GROQ_KEY_2 }}
+          GROQ_KEY_3: ${{ secrets.GROQ_KEY_3 }}
+          GROQ_KEY_4: ${{ secrets.GROQ_KEY_4 }}
+          GROQ_KEY_5: ${{ secrets.GROQ_KEY_5 }}
+          GROQ_KEY_6: ${{ secrets.GROQ_KEY_6 }}
+          GROQ_KEY_7: ${{ secrets.GROQ_KEY_7 }}
+          GROQ_KEY_8: ${{ secrets.GROQ_KEY_8 }}
+          GROQ_KEY_9: ${{ secrets.GROQ_KEY_9 }}
+          GROQ_KEY_10: ${{ secrets.GROQ_KEY_10 }}
+          GLOBAL_FEED_URL: ${{ secrets.GLOBAL_FEED_URL }}
+          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+          TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_BASE64 }}
+        run: |
+          cat <<EOF > .env
+          GROQ_KEY_1=${GROQ_KEY_1}
+          GROQ_KEY_2=${GROQ_KEY_2}
+          GROQ_KEY_3=${GROQ_KEY_3}
+          GROQ_KEY_4=${GROQ_KEY_4}
+          GROQ_KEY_5=${GROQ_KEY_5}
+          GROQ_KEY_6=${GROQ_KEY_6}
+          GROQ_KEY_7=${GROQ_KEY_7}
+          GROQ_KEY_8=${GROQ_KEY_8}
+          GROQ_KEY_9=${GROQ_KEY_9}
+          GROQ_KEY_10=${GROQ_KEY_10}
+          SOURCE_FEED_URL=${GLOBAL_FEED_URL:-https://www.youtube.com/@HubermanLab/videos}
+          YOUTUBE_TOKEN_BASE64=${YOUTUBE_TOKEN_BASE64}
+          TIKTOK_COOKIES_BASE64=${TIKTOK_COOKIES_BASE64}
+          TARGET_LANGUAGE=en
+          RAMPUP_MODE=true
+          EOF
+
+      - name: 🚀 Run Global Clipper Engine
+        env:
+          SINGLE_RUN: "true"
+        run: |
+          python main.py
+
+      - name: 💾 Sync Database State
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add bot_state.db || true
+          git commit -m "chore(global): sync bot_state.db [skip ci]" || true
+          git push || true
