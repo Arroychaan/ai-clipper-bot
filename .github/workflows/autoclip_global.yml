@@ -46,7 +46,7 @@ jobs:
           GROQ_KEY_8: ${{ secrets.GROQ_KEY_8 }}
           GROQ_KEY_9: ${{ secrets.GROQ_KEY_9 }}
           GROQ_KEY_10: ${{ secrets.GROQ_KEY_10 }}
-          SOURCE_FEED_URL: ${{ secrets.GLOBAL_FEED_URL || 'https://www.youtube.com/@joerogan/videos,https://www.youtube.com/@thediaryofaceo/videos,https://www.youtube.com/@CrimeJunkiePodcast/videos,https://www.youtube.com/@callherdaddy/videos,https://www.youtube.com/@HubermanLab/videos' }}
+          SOURCE_FEED_URL: ${{ secrets.GLOBAL_FEED_URL || 'https://www.youtube.com/@joerogan/videos,https://www.youtube.com/@thediaryofaceo/videos,https://www.youtube.com/@lexfridman/videos,https://www.youtube.com/@callherdaddy/videos,https://www.youtube.com/@HubermanLab/videos' }}
           YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_GLOBAL_BASE64 || secrets.YOUTUBE_TOKEN_BASE64 }}
           TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_GLOBAL_BASE64 || secrets.TIKTOK_COOKIES_BASE64 }}
           YOUTUBE_COOKIES_BASE64: ${{ secrets.YOUTUBE_COOKIES_GLOBAL_BASE64 || secrets.YOUTUBE_COOKIES_BASE64 }}
