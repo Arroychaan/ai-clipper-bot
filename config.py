@@ -67,24 +67,30 @@ TIKTOK_COOKIES_FILE: Path = TOKENS_DIR / "tiktok_cookies.json"
 AFFILIATE_COMMENT_TEXT: str = os.getenv("AFFILIATE_COMMENT_TEXT", "").strip()
 
 # Auto-decode token secrets if passed via environment (supports 4 separate accounts)
-yt_token_b64 = os.getenv("YOUTUBE_TOKEN_BASE64") or (
-    os.getenv("YOUTUBE_TOKEN_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("YOUTUBE_TOKEN_INDO_BASE64")
+raw_yt_b64 = (
+    os.getenv("YOUTUBE_TOKEN_BASE64") or 
+    (os.getenv("YOUTUBE_TOKEN_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("YOUTUBE_TOKEN_INDO_BASE64"))
 )
-if yt_token_b64:
+if raw_yt_b64:
     try:
-        decoded = base64.b64decode(yt_token_b64)
+        clean_b64 = raw_yt_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        decoded = base64.b64decode(clean_b64)
         with open(YOUTUBE_TOKEN_FILE, "wb") as f:
             f.write(decoded)
-    except Exception:
-        pass
+        print(f"[config] Successfully decoded YouTube token to {YOUTUBE_TOKEN_FILE}")
+    except Exception as e:
+        print(f"[config] Failed to decode YouTube token Base64: {e}")
 
-tt_cookies_b64 = os.getenv("TIKTOK_COOKIES_BASE64") or (
-    os.getenv("TIKTOK_COOKIES_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("TIKTOK_COOKIES_INDO_BASE64")
+raw_tt_b64 = (
+    os.getenv("TIKTOK_COOKIES_BASE64") or 
+    (os.getenv("TIKTOK_COOKIES_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("TIKTOK_COOKIES_INDO_BASE64"))
 )
-if tt_cookies_b64:
+if raw_tt_b64:
     try:
-        decoded = base64.b64decode(tt_cookies_b64)
+        clean_b64 = raw_tt_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        decoded = base64.b64decode(clean_b64)
         with open(TIKTOK_COOKIES_FILE, "wb") as f:
             f.write(decoded)
-    except Exception:
-        pass
+        print(f"[config] Successfully decoded TikTok cookies to {TIKTOK_COOKIES_FILE}")
+    except Exception as e:
+        print(f"[config] Failed to decode TikTok cookies Base64: {e}")
