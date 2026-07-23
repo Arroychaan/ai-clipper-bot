@@ -63,7 +63,7 @@ jobs:
           GROQ_KEY_8=${GROQ_KEY_8}
           GROQ_KEY_9=${GROQ_KEY_9}
           GROQ_KEY_10=${GROQ_KEY_10}
-          SOURCE_FEED_URL=${INDO_FEED_URL:-https://www.youtube.com/@DennySumargo/videos}
+          SOURCE_FEED_URL=${INDO_FEED_URL:-https://www.youtube.com/@RadityaDika/videos,https://www.youtube.com/@deddycorbuzier/videos,https://www.youtube.com/@DennySumargo/videos,https://www.youtube.com/@Vindes/videos,https://www.youtube.com/@agaklaenofficial/videos,https://www.youtube.com/@HASCreative/videos,https://www.youtube.com/@TuahKreasi/videos}
           YOUTUBE_TOKEN_BASE64=${YOUTUBE_TOKEN_BASE64}
           TIKTOK_COOKIES_BASE64=${TIKTOK_COOKIES_BASE64}
           AFFILIATE_COMMENT_TEXT=${AFFILIATE_COMMENT_TEXT}

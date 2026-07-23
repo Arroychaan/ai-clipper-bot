@@ -43,28 +43,35 @@ class YouTubeFetcher:
         if yt_dlp is None:
             logger.error("yt-dlp library is not installed. Skipping feed fetching.")
             return []
+
+        # Split multi-channel comma-separated URLs if provided
+        feed_sources = [url.strip() for url in feed_url_or_channel.split(",") if url.strip()]
+        logger.info("Fetching latest video feeds from %d channels: %s", len(feed_sources), feed_sources)
+
         ydl_opts = {
             "extract_flat": True,
             "skip_download": True,
-            "playlistend": limit,
+            "playlistend": max(1, limit // len(feed_sources)) if feed_sources else limit,
             "quiet": True
         }
         results: List[Dict[str, str]] = []
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(feed_url_or_channel, download=False)
-                entries = info.get("entries", []) if info else []
-                for entry in entries[:limit]:
-                    v_id = entry.get("id")
-                    v_title = entry.get("title", "")
-                    if v_id:
-                        results.append({
-                            "id": v_id,
-                            "title": v_title,
-                            "url": f"https://www.youtube.com/watch?v={v_id}"
-                        })
-        except Exception as e:
-            logger.error("Failed to fetch YouTube feed from %s: %s", feed_url_or_channel, str(e))
+
+        for target_url in feed_sources:
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(target_url, download=False)
+                    entries = info.get("entries", []) if info else []
+                    for entry in entries[:limit]:
+                        v_id = entry.get("id")
+                        v_title = entry.get("title", "")
+                        if v_id and not any(r["id"] == v_id for r in results):
+                            results.append({
+                                "id": v_id,
+                                "title": v_title,
+                                "url": f"https://www.youtube.com/watch?v={v_id}"
+                            })
+            except Exception as e:
+                logger.error("Failed to fetch YouTube feed from %s: %s", target_url, str(e))
         
         logger.info("Retrieved %d candidate videos from feed.", len(results))
         return results

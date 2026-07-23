@@ -1,4 +1,5 @@
 .env
+config/tokens/
 __pycache__/
 *.pyc
 temp/
