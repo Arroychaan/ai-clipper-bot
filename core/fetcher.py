@@ -91,12 +91,6 @@ class YouTubeFetcher:
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": output_template,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "mweb"]
-                }
-            },
-            "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
             "nocheckcertificate": True,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
@@ -116,9 +110,14 @@ class YouTubeFetcher:
 
         # Inject YouTube cookies for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
-        if os.path.exists(cookies_path):
+        if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
+            ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "tv"]}}
             logger.info("Using YouTube cookies file for authenticated download: %s", cookies_path)
+        else:
+            ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
 
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -150,12 +149,6 @@ class YouTubeFetcher:
         ydl_opts = {
             "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
             "outtmpl": output_template,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "mweb"]
-                }
-            },
-            "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
             "nocheckcertificate": True,
             "quiet": True,
             "overwrites": True
@@ -163,8 +156,13 @@ class YouTubeFetcher:
 
         # Inject YouTube cookies for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
-        if os.path.exists(cookies_path):
+        if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
+            ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "tv"]}}
+        else:
+            ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
 
         if start_sec is not None and end_sec is not None:
             # Buffer 3s before and after to ensure clean FFmpeg keyframe trimming
