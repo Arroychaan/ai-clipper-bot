@@ -91,6 +91,12 @@ class YouTubeFetcher:
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": output_template,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "mweb"]
+                }
+            },
+            "nocheckcertificate": True,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "wav",
@@ -137,6 +143,12 @@ class YouTubeFetcher:
         ydl_opts = {
             "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
             "outtmpl": output_template,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "mweb"]
+                }
+            },
+            "nocheckcertificate": True,
             "quiet": True,
             "overwrites": True
         }

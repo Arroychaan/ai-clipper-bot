@@ -215,12 +215,8 @@ def main_loop() -> None:
                     time.sleep(sleep_interval)
                     break  # Process 1 video per cycle interval
                 else:
-                    logger.warning("Video processing failed.")
-                    if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
-                        logger.info("SINGLE_RUN mode active. Exiting after failed run.")
-                        return
-                    logger.info("Waiting %d seconds before next attempt...", RETRY_DELAY_SEC)
-                    time.sleep(RETRY_DELAY_SEC)
+                    logger.warning("Video processing failed for candidate '%s'. Trying next candidate in feed...", v_id)
+                    continue
 
             if not processed_any:
                 logger.info("No new unprocessed videos found in feed.")
