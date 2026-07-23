@@ -48,6 +48,9 @@ jobs:
           GROQ_KEY_9: ${{ secrets.GROQ_KEY_9 }}
           GROQ_KEY_10: ${{ secrets.GROQ_KEY_10 }}
           SOURCE_FEED_URL: ${{ secrets.SOURCE_FEED_URL }}
+          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+          TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_BASE64 }}
+          AFFILIATE_COMMENT_TEXT: ${{ secrets.AFFILIATE_COMMENT_TEXT }}
         run: |
           cat <<EOF > .env
           GROQ_KEY_1=${GROQ_KEY_1}
@@ -61,6 +64,9 @@ jobs:
           GROQ_KEY_9=${GROQ_KEY_9}
           GROQ_KEY_10=${GROQ_KEY_10}
           SOURCE_FEED_URL=${SOURCE_FEED_URL:-https://www.youtube.com/@HubermanLab/videos}
+          YOUTUBE_TOKEN_BASE64=${YOUTUBE_TOKEN_BASE64}
+          TIKTOK_COOKIES_BASE64=${TIKTOK_COOKIES_BASE64}
+          AFFILIATE_COMMENT_TEXT=${AFFILIATE_COMMENT_TEXT}
           RAMPUP_MODE=true
           EOF
 

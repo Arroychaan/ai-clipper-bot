@@ -55,7 +55,29 @@ RETRY_DELAY_SEC: int = int(os.getenv("RETRY_DELAY_SEC", "60"))
 SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", "https://www.youtube.com/@HubermanLab/videos")
 MAX_FEED_ITEMS: int = int(os.getenv("MAX_FEED_ITEMS", "5"))
 
+import base64
+
 # Token & Cookie File Paths
 YOUTUBE_CLIENT_SECRETS_FILE: Path = TOKENS_DIR / "client_secrets.json"
 YOUTUBE_TOKEN_FILE: Path = TOKENS_DIR / "youtube_token.json"
 TIKTOK_COOKIES_FILE: Path = TOKENS_DIR / "tiktok_cookies.json"
+
+# Affiliate Monetization Link Settings
+AFFILIATE_COMMENT_TEXT: str = os.getenv("AFFILIATE_COMMENT_TEXT", "").strip()
+
+# Auto-decode token secrets if passed via environment (e.g., GitHub Actions Secrets)
+if os.getenv("YOUTUBE_TOKEN_BASE64"):
+    try:
+        decoded = base64.b64decode(os.getenv("YOUTUBE_TOKEN_BASE64", ""))
+        with open(YOUTUBE_TOKEN_FILE, "wb") as f:
+            f.write(decoded)
+    except Exception:
+        pass
+
+if os.getenv("TIKTOK_COOKIES_BASE64"):
+    try:
+        decoded = base64.b64decode(os.getenv("TIKTOK_COOKIES_BASE64", ""))
+        with open(TIKTOK_COOKIES_FILE, "wb") as f:
+            f.write(decoded)
+    except Exception:
+        pass

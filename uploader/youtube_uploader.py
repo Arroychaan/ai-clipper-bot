@@ -139,6 +139,29 @@ class YouTubeUploader:
 
             video_id = response.get("id")
             logger.info("Successfully published YouTube Short! Video URL: https://youtube.com/shorts/%s", video_id)
+            
+            # Post affiliate link comment if configured
+            from config import AFFILIATE_COMMENT_TEXT
+            if video_id and AFFILIATE_COMMENT_TEXT:
+                try:
+                    logger.info("Posting affiliate link comment to YouTube Short...")
+                    self.youtube_service.commentThreads().insert(
+                        part="snippet",
+                        body={
+                            "snippet": {
+                                "videoId": video_id,
+                                "topLevelComment": {
+                                    "snippet": {
+                                        "textOriginal": AFFILIATE_COMMENT_TEXT
+                                    }
+                                }
+                            }
+                        }
+                    ).execute()
+                    logger.info("Successfully posted affiliate comment!")
+                except Exception as comm_err:
+                    logger.warning("Could not post affiliate comment: %s", str(comm_err))
+
             return video_id
         except Exception as e:
             logger.error("YouTube upload failed: %s", str(e))
