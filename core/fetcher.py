@@ -12,7 +12,7 @@ try:
 except ImportError:
     yt_dlp = None  # type: ignore
 
-from config import TEMP_DIR, MAX_FEED_ITEMS, SOURCE_FEED_URL
+from config import TEMP_DIR, MAX_FEED_ITEMS, SOURCE_FEED_URL, YOUTUBE_COOKIES_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,12 @@ class YouTubeFetcher:
             "overwrites": True
         }
 
+        # Inject YouTube cookies for datacenter bot bypass
+        cookies_path = str(YOUTUBE_COOKIES_FILE)
+        if os.path.exists(cookies_path):
+            ydl_opts["cookiefile"] = cookies_path
+            logger.info("Using YouTube cookies file for authenticated download: %s", cookies_path)
+
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=True)
@@ -154,6 +160,11 @@ class YouTubeFetcher:
             "quiet": True,
             "overwrites": True
         }
+
+        # Inject YouTube cookies for datacenter bot bypass
+        cookies_path = str(YOUTUBE_COOKIES_FILE)
+        if os.path.exists(cookies_path):
+            ydl_opts["cookiefile"] = cookies_path
 
         if start_sec is not None and end_sec is not None:
             # Buffer 3s before and after to ensure clean FFmpeg keyframe trimming

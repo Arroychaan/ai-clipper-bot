@@ -62,6 +62,7 @@ import base64
 YOUTUBE_CLIENT_SECRETS_FILE: Path = TOKENS_DIR / "client_secrets.json"
 YOUTUBE_TOKEN_FILE: Path = TOKENS_DIR / "youtube_token.json"
 TIKTOK_COOKIES_FILE: Path = TOKENS_DIR / "tiktok_cookies.json"
+YOUTUBE_COOKIES_FILE: Path = TOKENS_DIR / "youtube_cookies.txt"
 
 # Affiliate Monetization Link Settings
 AFFILIATE_COMMENT_TEXT: str = os.getenv("AFFILIATE_COMMENT_TEXT", "").strip()
@@ -94,3 +95,17 @@ if raw_tt_b64:
         print(f"[config] Successfully decoded TikTok cookies to {TIKTOK_COOKIES_FILE}")
     except Exception as e:
         print(f"[config] Failed to decode TikTok cookies Base64: {e}")
+
+raw_ytcookies_b64 = (
+    os.getenv("YOUTUBE_COOKIES_BASE64") or 
+    (os.getenv("YOUTUBE_COOKIES_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("YOUTUBE_COOKIES_INDO_BASE64"))
+)
+if raw_ytcookies_b64:
+    try:
+        clean_b64 = raw_ytcookies_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        decoded = base64.b64decode(clean_b64)
+        with open(YOUTUBE_COOKIES_FILE, "wb") as f:
+            f.write(decoded)
+        print(f"[config] Successfully decoded YouTube cookies to {YOUTUBE_COOKIES_FILE}")
+    except Exception as e:
+        print(f"[config] Failed to decode YouTube cookies Base64: {e}")
