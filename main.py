@@ -78,6 +78,7 @@ def process_single_video(
     logger.info("==================================================")
 
     # 1. Update DB state to PROCESSING
+    logger.info("👉 [STEP 1/9] Updating DB status to PROCESSING...")
     mark_status(video_id, "PROCESSING")
 
     audio_path = None
@@ -87,12 +88,15 @@ def process_single_video(
 
     try:
         # 2. Download audio stream (16kHz WAV, lightweight 30MB)
+        logger.info("👉 [STEP 2/9] Downloading audio stream from YouTube...")
         _, audio_path = YouTubeFetcher.download_audio(video_url)
 
         # 3. Transcribe audio via Groq Whisper v3
+        logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
         transcript_data = groq_client.transcribe_audio(audio_path)
 
         # 4. Extract viral clip segment via Groq Llama 3.3 70B
+        logger.info("👉 [STEP 4/9] Extracting viral clip segment via Groq Llama 3.3 70B...")
         clip_meta = groq_client.extract_viral_clip(transcript_data)
         raw_start = clip_meta["start_time"]
         raw_end = clip_meta["end_time"]
@@ -100,13 +104,16 @@ def process_single_video(
         hashtags = clip_meta.get("hashtags", ["#Shorts", "#Viral"])
 
         # 5. Calibrate cut timestamps via silence detection
+        logger.info("👉 [STEP 5/9] Calibrating cut timestamps via silence detection...")
         start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
         duration = end_sec - start_sec
 
         # 6. Download fast 1080p MP4 video clip slice (35s slice ONLY - 50x faster!)
+        logger.info("👉 [STEP 6/9] Downloading fast 1080p MP4 video clip slice (35s section)...")
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
         # 7. Generate interactive SRT subtitles
+        logger.info("👉 [STEP 7/9] Generating interactive SRT subtitles...")
         srt_filename = f"{video_id}_subtitles.srt"
         srt_path = os.path.join(TEMP_DIR, srt_filename)
         generate_subtitle_file(
@@ -117,6 +124,7 @@ def process_single_video(
         )
 
         # 8. Render 9:16 vertical short using 1-pass CPU FFmpeg filtergraph
+        logger.info("👉 [STEP 8/9] Rendering 9:16 vertical short using 1-pass FFmpeg...")
         output_clip_name = f"{video_id}_short.mp4"
         output_clip_path = os.path.join(TEMP_DIR, output_clip_name)
         
@@ -132,6 +140,7 @@ def process_single_video(
             raise RuntimeError(f"FFmpeg vertical render failed for video {video_id}")
 
         # 9. Multi-Platform Automated Publishing
+        logger.info("👉 [STEP 9/9] Publishing video to YouTube Shorts & TikTok...")
         description = f"{title}\n\n" + " ".join(hashtags)
         
         yt_uploader.upload_short(
