@@ -5,7 +5,7 @@ Downloads 16kHz mono WAV audio streams and 1080p video streams cleanly to the te
 
 import os
 import logging
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Optional
 
 try:
     import yt_dlp  # type: ignore
