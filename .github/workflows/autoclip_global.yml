@@ -48,8 +48,8 @@ jobs:
           GROQ_KEY_9: ${{ secrets.GROQ_KEY_9 }}
           GROQ_KEY_10: ${{ secrets.GROQ_KEY_10 }}
           GLOBAL_FEED_URL: ${{ secrets.GLOBAL_FEED_URL }}
-          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
-          TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_BASE64 }}
+          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_GLOBAL_BASE64 || secrets.YOUTUBE_TOKEN_BASE64 }}
+          TIKTOK_COOKIES_BASE64: ${{ secrets.TIKTOK_COOKIES_GLOBAL_BASE64 || secrets.TIKTOK_COOKIES_BASE64 }}
         run: |
           cat <<EOF > .env
           GROQ_KEY_1=${GROQ_KEY_1}
