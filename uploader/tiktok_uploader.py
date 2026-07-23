@@ -82,9 +82,29 @@ class TikTokUploader:
                     context.add_cookies(cookies)
 
                 page = context.new_page()
-                logger.info("Navigating to TikTok Creator Center upload page...")
-                page.goto("https://www.tiktok.com/creator-center/upload", timeout=60000)
-                page.wait_for_load_state("networkidle", timeout=30000)
+                logger.info("Navigating to TikTok Studio upload page...")
+                
+                upload_urls = [
+                    "https://www.tiktok.com/tiktokstudio/upload",
+                    "https://www.tiktok.com/creator-center/upload"
+                ]
+                
+                navigated = False
+                for target_url in upload_urls:
+                    try:
+                        logger.info("Trying TikTok upload endpoint: %s", target_url)
+                        page.goto(target_url, timeout=45000, wait_until="domcontentloaded")
+                        time.sleep(3)
+                        navigated = True
+                        break
+                    except Exception as nav_err:
+                        logger.warning("Navigation to %s failed: %s", target_url, str(nav_err))
+                        continue
+
+                if not navigated:
+                    logger.error("Could not navigate to any TikTok upload URL.")
+                    browser.close()
+                    return False
 
                 # Locate file input element (supports iframe fallback)
                 file_input = page.query_selector('input[type="file"]')
@@ -96,7 +116,7 @@ class TikTokUploader:
                             break
 
                 if not file_input:
-                    logger.error("Failed to find file input element on TikTok upload page. Cookies might be expired.")
+                    logger.error("Failed to find file input element on TikTok upload page. Cookies might be expired or session unauthorized.")
                     browser.close()
                     return False
 
@@ -104,28 +124,30 @@ class TikTokUploader:
                 file_input.set_input_files(os.path.abspath(video_path))
                 
                 # Wait for video upload processing
-                time.sleep(10)
+                logger.info("Waiting for video upload processing to complete...")
+                time.sleep(12)
 
                 # Type caption text
-                caption_selector = 'div[contenteditable="true"], text=Caption'
+                caption_selector = 'div[contenteditable="true"], text=Caption, [data-contents="true"]'
                 try:
-                    caption_elem = page.wait_for_selector(caption_selector, timeout=15000)
+                    caption_elem = page.wait_for_selector(caption_selector, timeout=20000)
                     if caption_elem:
                         caption_elem.click()
                         page.keyboard.press("Control+A")
                         page.keyboard.press("Backspace")
                         page.keyboard.type(full_caption[:150]) # TikTok caption length limit safety
+                        logger.info("Typed TikTok caption successfully!")
                 except Exception as cap_err:
                     logger.warning("Could not set custom TikTok caption automatically: %s", str(cap_err))
 
                 # Click Post button
-                post_button_selector = 'button:has-text("Post"), button:has-text("Publish")'
+                post_button_selector = 'button:has-text("Post"), button:has-text("Publish"), button[type="submit"]'
                 try:
-                    post_btn = page.wait_for_selector(post_button_selector, timeout=15000)
+                    post_btn = page.wait_for_selector(post_button_selector, timeout=20000)
                     if post_btn:
                         logger.info("Clicking TikTok Post button...")
                         post_btn.click()
-                        time.sleep(5)
+                        time.sleep(8)
                         logger.info("TikTok upload command completed successfully!")
                         browser.close()
                         return True
