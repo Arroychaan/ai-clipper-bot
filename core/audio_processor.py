@@ -200,13 +200,14 @@ def generate_ass_subtitle_file(
     start_sec: float,
     end_sec: float,
     output_ass_path: str,
-    max_words_per_group: int = 2
+    max_words_per_group: int = 1
 ) -> str:
     """
-    Generates an ultra-mature CapCut/Hormozi style ASS subtitle file with Word-by-Word Active Highlighting.
-    Strictly clears previous words from screen instantly when the next word burst starts (Zero Text Residue).
+    Generates an ultra-pure 100% Real-Time 1-Word Exclusive CapCut ASS Subtitle File.
+    Every word pops ON SCREEN individually for its exact spoken duration and INSTANTLY VANISHES
+    the millisecond the next word begins (Zero Residue, Zero Lag, Zero Lingering Previous Words).
     """
-    logger.info("Generating CapCut Zero-Residue Word-by-Word ASS subtitle file at: %s", output_ass_path)
+    logger.info("Generating Ultra-Pure 1-Word Real-Time ASS Subtitles: %s", output_ass_path)
 
     # Automatically interpolate sentence segments into clean word-by-word timestamps
     word_timestamps = interpolate_word_timestamps(words)
@@ -230,17 +231,6 @@ def generate_ass_subtitle_file(
         logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
-    # Group into short 1 to 2 word bursts for instant visual pop
-    sub_entries = []
-    current_group = []
-    for word_info in clip_words:
-        current_group.append(word_info)
-        if len(current_group) >= max_words_per_group:
-            sub_entries.append(current_group)
-            current_group = []
-    if current_group:
-        sub_entries.append(current_group)
-
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -248,60 +238,44 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCut, Liberation Sans, 78, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 480, 1
+Style: CapCut, Liberation Sans, 84, &H0000FFFF, &H00FFFFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 6, 4, 2, 40, 40, 480, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     dialogue_lines = []
-    total_groups = len(sub_entries)
+    total_words = len(clip_words)
 
-    for group_idx, group in enumerate(sub_entries):
-        # Determine strict non-overlapping end boundary for this burst group
-        group_start = group[0]["start"]
-        group_end = group[-1]["end"]
+    for idx, w in enumerate(clip_words):
+        w_start = w["start"]
+        w_end = w["end"]
 
-        # Cap group end timestamp to the next group's start time to guarantee 100% screen clearing
-        if group_idx + 1 < total_groups:
-            next_group_start = sub_entries[group_idx + 1][0]["start"]
-            group_end = min(group_end, next_group_start)
+        # Cap the end boundary of the word to the EXACT millisecond start time of the next word!
+        if idx + 1 < total_words:
+            next_start = clip_words[idx + 1]["start"]
+            if next_start > w_start:
+                w_end = min(w_end, next_start)
 
-        if (group_end - group_start) < 0.15:
-            group_end = group_start + 0.15
+        if (w_end - w_start) < 0.1:
+            w_end = w_start + 0.1
 
-        for active_idx, w_active in enumerate(group):
-            w_start = w_active["start"]
-            w_end = w_active["end"]
+        start_ts = _format_ass_timestamp(w_start)
+        end_ts = _format_ass_timestamp(w_end)
 
-            # Cap active word end timestamp to group boundary or next word start
-            if active_idx + 1 < len(group):
-                w_end = min(w_end, group[active_idx + 1]["start"])
-            else:
-                w_end = min(w_end, group_end)
+        # STRICT 1-WORD PURE REAL-TIME POP: ONLY THE ACTIVE WORD IS ON SCREEN!
+        word_str = w["word"]
+        # Yellow Neon color (&H0000FFFF&) + 120% Pop Scale + Reset
+        text_line = f"{{\\c&H0000FFFF&\\fscx120\\fscy120}}{word_str}{{\\r}}"
 
-            if (w_end - w_start) < 0.12:
-                w_end = w_start + 0.12
-
-            start_ts = _format_ass_timestamp(w_start)
-            end_ts = _format_ass_timestamp(w_end)
-
-            formatted_words = []
-            for idx, item in enumerate(group):
-                if idx == active_idx:
-                    # Active Word: Neon Yellow + 118% Scale Pop + Reset
-                    formatted_words.append(f"{{\\c&H0000FFFF&\\fscx118\\fscy118}}{item['word']}{{\\r}}")
-                else:
-                    formatted_words.append(item["word"])
-
-            text_line = " ".join(formatted_words)
-            dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{text_line}")
+        dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{text_line}")
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogue_lines) + "\n")
 
-    logger.info("Successfully generated Zero-Residue Word-by-Word ASS subtitles (%d events)", len(dialogue_lines))
+    logger.info("Successfully generated Ultra-Pure Real-Time 1-Word ASS subtitles (%d events)", len(dialogue_lines))
     return output_ass_path
+
 
 
 
