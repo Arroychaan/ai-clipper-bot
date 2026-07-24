@@ -112,6 +112,22 @@
             <span>Windah</span>
           </button>
         </div>
+        <script>
+          (function() {
+            var cachedMode = localStorage.getItem('bot_mode') || 'PODCAST';
+            var pBtn = document.getElementById('modePodcastBtn');
+            var wBtn = document.getElementById('modeWindahBtn');
+            if (pBtn && wBtn) {
+              if (cachedMode === 'WINDAH') {
+                wBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-purple-600 text-white shadow-md flex items-center gap-1 ring-2 ring-purple-500/50';
+                pBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+              } else {
+                pBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1 ring-2 ring-indigo-500/50';
+                wBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+              }
+            }
+          })();
+        </script>
 
         <button id="pwaInstallBtn" onclick="installPWA()" class="hidden px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all">
           <i class="fa-solid fa-download"></i>
@@ -123,6 +139,7 @@
       </div>
     </div>
   </nav>
+
 
 
   <!-- MAIN CONTAINER -->
@@ -257,6 +274,7 @@
     }
 
     function updateModeUI(activeMode) {
+      try { localStorage.setItem('bot_mode', activeMode); } catch(e){}
       const pBtn = document.getElementById('modePodcastBtn');
       const wBtn = document.getElementById('modeWindahBtn');
       if (!pBtn || !wBtn) return;
@@ -270,6 +288,7 @@
     }
 
     async function switchBotMode(targetMode) {
+      updateModeUI(targetMode); // Instant 0ms visual toggle response
       try {
         const res = await fetch('/api/mode', {
           method: 'POST',
@@ -290,6 +309,7 @@
         showToast('Gagal mengubah mode bot', 'error');
       }
     }
+
 
     // Fetch Stats & Clips
     async function loadDashboard() {
