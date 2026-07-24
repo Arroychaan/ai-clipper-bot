@@ -304,15 +304,23 @@
                 <i class="fa-solid fa-fire text-amber-300"></i> ${clip.viral_score}/100
               </span>
 
-              <!-- Status Badge -->
-              <span class="px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg backdrop-blur-md ${
-                clip.status === 'POSTED' 
-                  ? 'bg-emerald-600/90 text-white' 
-                  : 'bg-amber-500/90 text-white'
-              }">
-                ${clip.status === 'POSTED' ? '✅ POSTED' : '📥 READY'}
-              </span>
+              <!-- Status & Gaming Badges -->
+              <div class="flex items-center gap-1">
+                ${(clip.clip_title || '').toLowerCase().includes('windah') || (clip.clip_title || '').toLowerCase().includes('game') || (clip.video_title || '').toLowerCase().includes('windah') || (clip.video_title || '').toLowerCase().includes('game') ? `
+                  <span class="px-2 py-1 rounded-lg bg-indigo-600/90 text-white text-[10px] font-bold shadow-lg backdrop-blur-md flex items-center gap-1">
+                    <i class="fa-solid fa-gamepad"></i> GAMING
+                  </span>
+                ` : ''}
+                <span class="px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg backdrop-blur-md ${
+                  clip.status === 'POSTED' 
+                    ? 'bg-emerald-600/90 text-white' 
+                    : 'bg-amber-500/90 text-white'
+                }">
+                  ${clip.status === 'POSTED' ? '✅ POSTED' : '📥 READY'}
+                </span>
+              </div>
             </div>
+
 
             <!-- Duration Badge -->
             <div class="absolute bottom-3 right-3 pointer-events-none">

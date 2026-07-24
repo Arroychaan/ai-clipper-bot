@@ -20,13 +20,16 @@ from config import (
     RAMPUP_INTERVAL_SEC,
     STANDARD_INTERVAL_SEC,
     RETRY_DELAY_SEC,
-    SOURCE_FEED_URL
+    SOURCE_FEED_URL,
+    GAMING_MODE
 )
 from core.db_manager import init_db, is_processed, mark_status, save_clip
 from core.groq_manager import ResilientGroqClient
 from core.fetcher import YouTubeFetcher
 from core.audio_processor import calibrate_cut_timestamps, generate_ass_subtitle_file, generate_subtitle_file
-from core.ffmpeg_renderer import render_vertical_shorts
+from core.ffmpeg_renderer import render_vertical_shorts, render_gaming_split_shorts
+from core.facecam_detector import detect_streamer_facecam
+
 
 # Configure production logger
 logging.basicConfig(
@@ -147,17 +150,38 @@ def process_single_video(
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
-        logger.info("👉 [STEP 7/7] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
-        render_success = render_vertical_shorts(
-            input_video=video_path,
-            start_time=start_sec,
-            duration=duration,
-            output_path=output_clip_path,
-            subtitle_path=sub_path
-        )
+        # Check if Gaming Split-Screen Mode should be used
+        is_gaming_video = False
+        if GAMING_MODE in ("true", "1", "yes"):
+            is_gaming_video = True
+        elif GAMING_MODE == "auto":
+            gaming_keywords = ["windah", "basudara", "game", "gaming", "roblox", "mobile legend", "gta", "minecraft", "valorant", "ff", "free fire", "horror"]
+            is_gaming_video = any(k in video_title.lower() for k in gaming_keywords) or any(k in SOURCE_FEED_URL.lower() for k in gaming_keywords)
+
+        if is_gaming_video:
+            logger.info("🎮 [STEP 7/7] Gaming Split-Screen Mode Detected! Running AI Facecam Tracker -> %s...", output_clip_path)
+            facecam_coords = detect_streamer_facecam(video_path)
+            render_success = render_gaming_split_shorts(
+                input_video=video_path,
+                start_time=start_sec,
+                duration=duration,
+                output_path=output_clip_path,
+                facecam_coords=facecam_coords,
+                subtitle_path=sub_path
+            )
+        else:
+            logger.info("👉 [STEP 7/7] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
+            render_success = render_vertical_shorts(
+                input_video=video_path,
+                start_time=start_sec,
+                duration=duration,
+                output_path=output_clip_path,
+                subtitle_path=sub_path
+            )
 
         if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
             raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
+
 
 
         # Save clip metadata into SQLite database

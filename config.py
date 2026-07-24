@@ -49,6 +49,11 @@ MAX_CLIP_DURATION: float = 55.0
 MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "90"))
 TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "id").lower()  # 'id' for Indonesia, 'en' for Global market
 
+# Gaming Split-Screen Mode Configuration
+GAMING_MODE: str = os.getenv("GAMING_MODE", "auto").lower()  # 'true', 'false', 'auto'
+GAMING_DIVIDER_COLOR: str = os.getenv("GAMING_DIVIDER_COLOR", "cyan").lower()  # 'cyan', 'yellow', 'purple'
+
+
 # Dashboard & Web PWA Configuration
 DASHBOARD_HOST: str = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 DASHBOARD_PORT: int = int(os.getenv("DASHBOARD_PORT", "8000"))
