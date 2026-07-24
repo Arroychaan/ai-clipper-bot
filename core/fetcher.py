@@ -230,7 +230,18 @@ class YouTubeFetcher:
         output_template = os.path.join(TEMP_DIR, "%(id)s_video.%(ext)s")
 
         ydl_opts = {
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web_creator", "android_vr", "android", "ios"]}}
+            "format": "b/best",
+            "outtmpl": output_template,
+            "nocheckcertificate": True,
+            "quiet": True,
+            "overwrites": True,
+            "extractor_args": {"youtube": {"player_client": ["web_creator", "android_vr", "android", "ios"]}}
+        }
+
+        cookies_path = str(YOUTUBE_COOKIES_FILE)
+        if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
+            ydl_opts["cookiefile"] = cookies_path
+
 
 
         def _execute_download(opts: dict) -> Tuple[str, str]:
