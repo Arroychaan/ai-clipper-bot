@@ -118,27 +118,80 @@ def _format_ass_timestamp(seconds: float) -> str:
     return f"{hours:01d}:{minutes:02d}:{secs:02d}.{cs:02d}"
 
 
+def interpolate_word_timestamps(raw_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Transforms sentence-level or raw transcript segments into precise word-by-word timestamps.
+    If items already contain word-level timestamps ('word' key present), returns them directly.
+    Otherwise, splits sentences into individual words and proportionally interpolates word timestamps based on character length.
+    """
+    extracted_words: List[Dict[str, Any]] = []
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        # Check if item is already a word-level timestamp object
+        if "word" in item and item["word"]:
+            extracted_words.append({
+                "word": str(item["word"]).strip(),
+                "start": float(item.get("start", 0.0)),
+                "end": float(item.get("end", 0.0))
+            })
+            continue
+
+        # Item is a sentence-level segment
+        text = str(item.get("text") or "").strip()
+        s_start = float(item.get("start", 0.0))
+        s_end = float(item.get("end", 0.0))
+        s_duration = max(0.2, s_end - s_start)
+
+        words_in_text = text.split()
+        if not words_in_text:
+            continue
+
+        total_chars = sum(len(w) for w in words_in_text)
+        if total_chars == 0:
+            total_chars = len(words_in_text)
+
+        curr_time = s_start
+        for w in words_in_text:
+            w_ratio = len(w) / total_chars
+            w_dur = max(0.12, s_duration * w_ratio)
+            w_end = min(s_end, curr_time + w_dur)
+            extracted_words.append({
+                "word": w,
+                "start": curr_time,
+                "end": w_end
+            })
+            curr_time = w_end
+
+    return extracted_words
+
+
 def generate_ass_subtitle_file(
     words: List[Dict[str, Any]],
     start_sec: float,
     end_sec: float,
     output_ass_path: str,
-    max_words_per_group: int = 3
+    max_words_per_group: int = 2
 ) -> str:
     """
-    Generates a CapCut-style ASS (Advanced SubStation Alpha) subtitle file with active word highlighting.
-    Active word is highlighted in vibrant yellow with bold outline and shadow.
+    Generates a CapCut/Hormozi style ASS (Advanced SubStation Alpha) subtitle file with Word-by-Word Active Highlighting.
+    Active word is highlighted in vibrant yellow (&H0000FFFF&) and popped/scaled up 115% in real time.
     """
-    logger.info("Generating CapCut-style ASS subtitle file at: %s", output_ass_path)
+    logger.info("Generating CapCut Word-by-Word ASS subtitle file at: %s", output_ass_path)
+
+    # Automatically interpolate sentence segments into precise word-by-word timestamps if needed
+    word_timestamps = interpolate_word_timestamps(words)
 
     clip_words = []
-    for w in words:
+    for w in word_timestamps:
         w_start = float(w.get("start", 0.0))
         w_end = float(w.get("end", 0.0))
         if w_start >= start_sec and w_end <= end_sec:
             rel_start = max(0.0, w_start - start_sec)
             rel_end = max(rel_start + 0.1, w_end - start_sec)
-            word_val = str(w.get("word") or w.get("text") or "").strip().upper()
+            word_val = str(w.get("word") or "").strip().upper()
             if word_val:
                 clip_words.append({
                     "word": word_val,
@@ -147,9 +200,10 @@ def generate_ass_subtitle_file(
                 })
 
     if not clip_words:
-        # Fallback to SRT if no word timestamps
+        logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
+    # Group into short 2-word bursts for maximum viral readability
     sub_entries = []
     current_group = []
     for word_info in clip_words:
@@ -167,8 +221,7 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCut, Arial, 68, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 4, 3, 2, 40, 40, 420, 1
-Style: CapCutYellow, Arial, 72, &H0000FFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 4, 2, 40, 40, 420, 1
+Style: CapCut, Arial Black, 76, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 480, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -179,8 +232,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for active_idx, w_active in enumerate(group):
             w_start = w_active["start"]
             w_end = w_active["end"]
-            if (w_end - w_start) < 0.15:
-                w_end = w_start + 0.15
+            if (w_end - w_start) < 0.12:
+                w_end = w_start + 0.12
 
             start_ts = _format_ass_timestamp(w_start)
             end_ts = _format_ass_timestamp(w_end)
@@ -188,7 +241,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             formatted_words = []
             for idx, item in enumerate(group):
                 if idx == active_idx:
-                    formatted_words.append(f"{{\\rCapCutYellow}}{item['word']}{{\\rCapCut}}")
+                    # Active Word: Neon Yellow color + 115% Pop scale + Reset back
+                    formatted_words.append(f"{{\\c&H0000FFFF&\\fscx115\\fscy115}}{item['word']}{{\\r}}")
                 else:
                     formatted_words.append(item["word"])
 
@@ -198,8 +252,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogue_lines) + "\n")
 
-    logger.info("Successfully generated ASS subtitle file with CapCut active word highlight (%d events)", len(dialogue_lines))
+    logger.info("Successfully generated Word-by-Word ASS subtitles with active word highlight (%d events)", len(dialogue_lines))
     return output_ass_path
+
 
 
 def generate_subtitle_file(
