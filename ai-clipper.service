@@ -1,14 +1,13 @@
 [Unit]
-Description=24/7 Automated Video Clipping and Publishing Bot (ai-clipper-bot)
+Description=24/7 Automated Video Clipping Engine (ai-clipper-bot)
 After=network.target network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/ai-clipper-bot
-ExecStart=/home/ubuntu/ai-clipper-bot/venv/bin/python3 main.py
+User=root
+WorkingDirectory=/root/ai-clipper-bot
+ExecStart=/root/ai-clipper-bot/venv/bin/python main.py
 Restart=always
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
@@ -17,3 +16,4 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+

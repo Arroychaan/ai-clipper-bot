@@ -4,11 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/ai-clipper-bot
-ExecStart=/home/ubuntu/ai-clipper-bot/venv/bin/python dashboard/server.py
+User=root
+WorkingDirectory=/root/ai-clipper-bot
+ExecStart=/root/ai-clipper-bot/venv/bin/python dashboard/server.py
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+
