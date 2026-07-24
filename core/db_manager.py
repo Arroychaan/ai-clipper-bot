@@ -18,8 +18,31 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def purge_invalid_clips() -> None:
+    """Purges any database clip records whose MP4 file is missing or corrupted (< 100KB)."""
+    from config import CLIPS_DIR
+    import os
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT clip_id, clip_path FROM clips")
+        rows = cursor.fetchall()
+        for row in rows:
+            clip_id = row["clip_id"]
+            clip_filename = row["clip_path"]
+            file_path = CLIPS_DIR / clip_filename
+            if not os.path.exists(file_path) or os.path.getsize(file_path) < 100000:
+                logger.warning("Purging invalid/corrupted clip record '%s' (File: %s)", clip_id, file_path)
+                cursor.execute("DELETE FROM clips WHERE clip_id = ?", (clip_id,))
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+        conn.commit()
+
+
 def init_db() -> None:
-    """Initializes the database schema if it does not already exist."""
+    """Initializes the database schema if it does not already exist and purges invalid clips."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -51,6 +74,11 @@ def init_db() -> None:
         )
         conn.commit()
     logger.info("SQLite database initialized at: %s", DB_PATH)
+    try:
+        purge_invalid_clips()
+    except Exception as e:
+        logger.warning("Failed to run purge_invalid_clips: %s", str(e))
+
 
 
 def is_processed(video_id: str) -> bool:

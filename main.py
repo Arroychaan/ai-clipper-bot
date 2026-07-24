@@ -156,8 +156,9 @@ def process_single_video(
             subtitle_path=sub_path
         )
 
-        if not render_success or not os.path.exists(output_clip_path):
-            raise RuntimeError(f"FFmpeg vertical render failed for video {video_id}")
+        if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
+            raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
+
 
         # Save clip metadata into SQLite database
         clip_id = f"{video_id}_{int(start_sec)}"
