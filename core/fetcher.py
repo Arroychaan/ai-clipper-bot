@@ -179,22 +179,28 @@ class YouTubeFetcher:
             "overwrites": True
         }
 
-        # Inject YouTube cookies for datacenter bot bypass
+        # Inject YouTube cookies and mobile/Android player client for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
-            ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "tv"]}}
-            logger.info("Using YouTube cookies file for authenticated download: %s", cookies_path)
-        else:
-            ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
+
+        ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
 
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=True)
-            video_id = info.get("id", "")
-            audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=True)
+                video_id = info.get("id", "")
+                audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
+        except Exception as primary_err:
+            logger.warning("Primary audio download failed (%s). Retrying without cookies via Android client...", str(primary_err))
+            ydl_opts.pop("cookiefile", None)
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=True)
+                video_id = info.get("id", "")
+                audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
             
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Expected audio file missing after download: {audio_path}")
@@ -225,15 +231,12 @@ class YouTubeFetcher:
             "overwrites": True
         }
 
-        # Inject YouTube cookies and mobile/Android player client for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
-            ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb", "web"]}}
-        else:
-            ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
+
+        ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
 
         if start_sec is not None and end_sec is not None:
             # Buffer 3s before and after to ensure clean FFmpeg keyframe trimming
@@ -249,9 +252,17 @@ class YouTubeFetcher:
         else:
             logger.info("Downloading 1080p MP4 video stream for: %s", youtube_url)
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=True)
-            video_id = info.get("id", "")
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=True)
+                video_id = info.get("id", "")
+        except Exception as vid_err:
+            logger.warning("Primary video download failed (%s). Retrying without cookies via Android client...", str(vid_err))
+            ydl_opts.pop("cookiefile", None)
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=True)
+                video_id = info.get("id", "")
             
             # Find the actual saved file path
             video_path = os.path.join(TEMP_DIR, f"{video_id}_video.mp4")
