@@ -60,6 +60,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
           git add bot_state.db || true
           git commit -m "chore(global): sync bot_state.db [skip ci]" || true
-          git push || true
+          git push origin main || true
