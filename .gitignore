@@ -6,3 +6,6 @@ temp/
 logs/
 .venv/
 venv/
+*.db
+bot_state.db
+
