@@ -264,18 +264,19 @@ class YouTubeFetcher:
                 info = ydl.extract_info(youtube_url, download=True)
                 video_id = info.get("id", "")
             
-            # Find the actual saved file path
-            video_path = os.path.join(TEMP_DIR, f"{video_id}_video.mp4")
-            if not os.path.exists(video_path):
-                # Fallback check if yt-dlp preserved a different extension
-                for ext in ["mp4", "mkv", "webm"]:
-                    alt_path = os.path.join(TEMP_DIR, f"{video_id}_video.{ext}")
-                    if os.path.exists(alt_path):
-                        video_path = alt_path
-                        break
+        # Find the actual saved file path
+        video_path = os.path.join(TEMP_DIR, f"{video_id}_video.mp4")
+        if not os.path.exists(video_path):
+            # Fallback check if yt-dlp preserved a different extension
+            for ext in ["mp4", "mkv", "webm"]:
+                alt_path = os.path.join(TEMP_DIR, f"{video_id}_video.{ext}")
+                if os.path.exists(alt_path):
+                    video_path = alt_path
+                    break
                         
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Expected video file missing after download: {video_path}")
 
         logger.info("Video stream ready: %s", video_path)
         return video_path
+
