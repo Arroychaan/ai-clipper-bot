@@ -14,19 +14,19 @@ from typing import List, Dict, Any
 from config import (
     LOG_FILE_PATH,
     TEMP_DIR,
+    CLIPS_DIR,
+    MIN_VIRAL_SCORE,
     RAMPUP_MODE,
     RAMPUP_INTERVAL_SEC,
     STANDARD_INTERVAL_SEC,
     RETRY_DELAY_SEC,
     SOURCE_FEED_URL
 )
-from core.db_manager import init_db, is_processed, mark_status
+from core.db_manager import init_db, is_processed, mark_status, save_clip
 from core.groq_manager import ResilientGroqClient
 from core.fetcher import YouTubeFetcher
-from core.audio_processor import calibrate_cut_timestamps, generate_subtitle_file
+from core.audio_processor import calibrate_cut_timestamps, generate_ass_subtitle_file, generate_subtitle_file
 from core.ffmpeg_renderer import render_vertical_shorts
-from uploader.youtube_uploader import YouTubeUploader
-from uploader.tiktok_uploader import TikTokUploader
 
 # Configure production logger
 logging.basicConfig(
@@ -42,11 +42,11 @@ logger = logging.getLogger("ai-clipper-bot")
 
 def cleanup_temp_workspace() -> None:
     """
-    ATOMIC CLEANUP: Explicitly purges all temporary files (.mp4, .wav, .srt)
+    ATOMIC CLEANUP: Explicitly purges all temporary working files (.mp4, .wav, .srt, .ass)
     from TEMP_DIR to guarantee zero disk growth and zero memory leaks.
     """
     logger.info("Executing atomic workspace cleanup in: %s", TEMP_DIR)
-    patterns = ["*.mp4", "*.wav", "*.srt", "*.webm", "*.mkv"]
+    patterns = ["*.mp4", "*.wav", "*.srt", "*.ass", "*.webm", "*.mkv"]
     for pattern in patterns:
         search_path = os.path.join(TEMP_DIR, pattern)
         for filepath in glob.glob(search_path):
@@ -59,126 +59,123 @@ def cleanup_temp_workspace() -> None:
 
 def process_single_video(
     video_item: Dict[str, str],
-    groq_client: ResilientGroqClient,
-    yt_uploader: YouTubeUploader,
-    tt_uploader: TikTokUploader
+    groq_client: ResilientGroqClient
 ) -> bool:
     """
-    Executes the full pipeline for a single YouTube video.
+    Executes the clipping pipeline for a single YouTube video.
     Guarantees atomic file cleanup using try...finally.
-    
-    Returns:
-        bool: True if video was successfully processed and published.
     """
     video_id = video_item["id"]
     video_url = video_item["url"]
+    video_title = video_item.get("title", "YouTube Video")
     
     logger.info("==================================================")
-    logger.info("Starting processing pipeline for video ID: %s", video_id)
+    logger.info("Starting clipping engine for video ID: %s", video_id)
     logger.info("==================================================")
 
     # 1. Update DB state to PROCESSING
-    logger.info("👉 [STEP 1/9] Updating DB status to PROCESSING...")
+    logger.info("👉 [STEP 1/7] Updating DB status to PROCESSING...")
     mark_status(video_id, "PROCESSING")
 
     audio_path = None
     video_path = None
-    srt_path = None
+    sub_path = None
     output_clip_path = None
 
     try:
-        # 2. Get video transcript (Direct YouTube API first for 0.1s instant extraction, Groq Whisper fallback)
-        logger.info("👉 [STEP 2/9] Fetching video transcript...")
+        # 2. Get video transcript
+        logger.info("👉 [STEP 2/7] Fetching video transcript...")
         transcript_data = YouTubeFetcher.get_transcript_direct(video_id)
         
         audio_path = None
         if not transcript_data:
-            logger.info("Direct transcript unavailable. Attempting audio download for Groq Whisper...")
+            logger.info("Direct transcript unavailable. Downloading audio for Groq Whisper...")
             try:
                 _, audio_path = YouTubeFetcher.download_audio(video_url)
-                logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
+                logger.info("👉 [STEP 3/7] Transcribing audio via Groq Whisper Large v3...")
                 transcript_data = groq_client.transcribe_audio(audio_path)
             except Exception as audio_err:
-                logger.warning("Audio download/transcription failed for candidate '%s': %s. Skipping to next candidate...", video_id, str(audio_err))
+                logger.warning("Audio download/transcription failed for candidate '%s': %s. Skipping...", video_id, str(audio_err))
                 return False
         else:
-            logger.info("👉 [STEP 3/9] Direct transcript retrieved in 0.1s! Bypassing audio download.")
+            logger.info("👉 [STEP 3/7] Direct transcript retrieved instantly!")
 
         # 4. Extract viral clip segment via Groq Llama 3.3 70B
-        logger.info("👉 [STEP 4/9] Extracting viral clip segment via Groq Llama 3.3 70B...")
+        logger.info("👉 [STEP 4/7] Evaluating viral hook score via Groq Llama 3.3 70B...")
         clip_meta = groq_client.extract_viral_clip(transcript_data)
+        
+        viral_score = clip_meta.get("viral_score", 90)
+        logger.info("Evaluated Viral Hook Score: %d/100 (Threshold: %d)", viral_score, MIN_VIRAL_SCORE)
+
+        if viral_score < MIN_VIRAL_SCORE:
+            logger.warning(
+                "⚠️ Clip candidate for video '%s' scored %d/100, which is below the minimum threshold of %d. Skipping render.",
+                video_id, viral_score, MIN_VIRAL_SCORE
+            )
+            mark_status(video_id, "COMPLETED")
+            return True
+
         raw_start = clip_meta["start_time"]
         raw_end = clip_meta["end_time"]
         title = clip_meta.get("title", "Viral Clip")
-        hashtags = clip_meta.get("hashtags", ["#Shorts", "#Viral"])
+        caption = clip_meta.get("caption", title)
+        hashtags_str = clip_meta.get("hashtags_str", "#fyp #viral #shorts #trending")
 
         # 5. Calibrate cut timestamps via silence detection
-        logger.info("👉 [STEP 5/9] Calibrating cut timestamps...")
+        logger.info("👉 [STEP 5/7] Calibrating cut timestamps...")
         if audio_path and os.path.exists(audio_path):
             start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
         else:
             start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
         duration = end_sec - start_sec
 
-        # 6. Download fast 1080p MP4 video clip slice (35s slice ONLY - 50x faster!)
-        logger.info("👉 [STEP 6/9] Downloading fast 1080p MP4 video clip slice (35s section)...")
+        # Download fast video stream slice
+        logger.info("👉 [STEP 6/7] Downloading MP4 video stream section...")
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
-        # 7. Generate interactive SRT subtitles
-        logger.info("👉 [STEP 7/9] Generating interactive SRT subtitles...")
-        srt_filename = f"{video_id}_subtitles.srt"
-        srt_path = os.path.join(TEMP_DIR, srt_filename)
-        generate_subtitle_file(
+        # Generate CapCut-style ASS subtitles
+        ass_filename = f"{video_id}_subtitles.ass"
+        sub_path = os.path.join(TEMP_DIR, ass_filename)
+        generate_ass_subtitle_file(
             words=transcript_data.get("words") or transcript_data.get("segments", []),
             start_sec=start_sec,
             end_sec=end_sec,
-            output_srt_path=srt_path
+            output_ass_path=sub_path
         )
 
-        # 8. Render 9:16 vertical short using 1-pass CPU FFmpeg filtergraph
-        logger.info("👉 [STEP 8/9] Rendering 9:16 vertical short using 1-pass FFmpeg...")
-        output_clip_name = f"{video_id}_short.mp4"
-        output_clip_path = os.path.join(TEMP_DIR, output_clip_name)
+        # 6. Render Full HD 9:16 vertical short using FFmpeg
+        clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
+        output_clip_path = str(CLIPS_DIR / clip_filename)
         
+        logger.info("👉 [STEP 7/7] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
         render_success = render_vertical_shorts(
             input_video=video_path,
             start_time=start_sec,
             duration=duration,
             output_path=output_clip_path,
-            subtitle_path=srt_path
+            subtitle_path=sub_path
         )
 
         if not render_success or not os.path.exists(output_clip_path):
             raise RuntimeError(f"FFmpeg vertical render failed for video {video_id}")
 
-        # 9. Multi-Platform Automated Publishing
-        logger.info("👉 [STEP 9/9] Publishing video to YouTube Shorts & TikTok...")
-        description = f"{title}\n\n" + " ".join(hashtags)
-        
-        yt_res = yt_uploader.upload_short(
-            video_path=output_clip_path,
-            title=title,
-            description=description,
-            tags=[h.replace("#", "") for h in hashtags]
+        # Save clip metadata into SQLite database
+        clip_id = f"{video_id}_{int(start_sec)}"
+        save_clip(
+            clip_id=clip_id,
+            video_id=video_id,
+            video_title=video_title,
+            clip_title=title,
+            caption=caption,
+            hashtags=hashtags_str,
+            viral_score=viral_score,
+            duration=round(duration, 1),
+            clip_path=clip_filename
         )
 
-        tt_res = tt_uploader.upload_short(
-            video_path=output_clip_path,
-            caption=title,
-            hashtags=hashtags
-        )
-
-        if not yt_res and not tt_res:
-            logger.warning(
-                "⚠️ [PUBLISHING NOTICE] Video clip rendered successfully (%s), but upload was SKIPPED on both YouTube and TikTok because YOUTUBE_TOKEN_BASE64 and TIKTOK_COOKIES_BASE64 secrets are not configured or valid in GitHub Secrets!",
-                output_clip_path
-            )
-        else:
-            logger.info("🎉 Video successfully published! YouTube ID: %s | TikTok Status: %s", yt_res or "Skipped", "Uploaded" if tt_res else "Skipped")
-
-        # 10. Mark DB status to COMPLETED
+        # Mark DB status to COMPLETED
         mark_status(video_id, "COMPLETED")
-        logger.info("Successfully completed pipeline for video ID: %s", video_id)
+        logger.info("🎉 Clip successfully generated & saved to PWA Dashboard! Clip ID: %s (Viral Score: %d)", clip_id, viral_score)
         return True
 
     except Exception as e:
@@ -187,28 +184,17 @@ def process_single_video(
         return False
 
     finally:
-        # ATOMIC CLEANUP: Always remove temporary files from TEMP_DIR
         cleanup_temp_workspace()
 
 
 def main_loop() -> None:
     """Main infinite operational loop for 24/7 autonomous deployment."""
-    logger.info("Initializing ai-clipper-bot engine...")
+    logger.info("Initializing 24/7 AI Clipper Engine...")
     init_db()
 
     groq_client = ResilientGroqClient()
-    yt_uploader = YouTubeUploader()
-    tt_uploader = TikTokUploader()
 
-    # Determine posting interval based on Ramp-Up setting
-    if RAMPUP_MODE:
-        sleep_interval = RAMPUP_INTERVAL_SEC
-        logger.info("MODE: Account Ramp-Up active (3 clips/day cadence, sleep interval = %ds)", sleep_interval)
-    else:
-        sleep_interval = STANDARD_INTERVAL_SEC
-        logger.info("MODE: Standard Production active (10 clips/day cadence, sleep interval = %ds)", sleep_interval)
-
-    logger.info("Bot engine operational! Entering 24/7 infinite loop...")
+    logger.info("Bot engine operational! Entering 24/7 infinite clipping loop...")
 
     while True:
         try:
@@ -224,33 +210,31 @@ def main_loop() -> None:
                     continue
 
                 logger.info("Found unprocessed candidate video ID: %s ('%s')", v_id, item.get("title"))
-                success = process_single_video(item, groq_client, yt_uploader, tt_uploader)
+                success = process_single_video(item, groq_client)
                 
                 if success:
                     processed_any = True
-                    logger.info("Cycle success.")
-                    if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
-                        logger.info("SINGLE_RUN / CI mode active. Exiting process after successful run.")
+                    logger.info("Cycle success. Next video...")
+                    if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
+                        logger.info("SINGLE_RUN mode active. Exiting process after successful run.")
                         return
-                    logger.info("Sleeping for %d seconds before next upload...", sleep_interval)
-                    time.sleep(sleep_interval)
-                    break  # Process 1 video per cycle interval
+                    time.sleep(10)  # Brief pause before checking next video
                 else:
                     failed_attempts += 1
                     logger.warning("Video processing failed for candidate '%s' (Attempt %d/3).", v_id, failed_attempts)
                     if failed_attempts >= 3:
                         logger.warning("Reached maximum candidate retry limit (3 attempts). Exiting cycle cleanly.")
-                        if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
+                        if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
                             return
                         break
                     continue
 
             if not processed_any:
                 logger.info("No new unprocessed videos found in feed.")
-                if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
-                    logger.info("SINGLE_RUN / CI mode active. Exiting cleanly.")
+                if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
+                    logger.info("SINGLE_RUN mode active. Exiting cleanly.")
                     return
-                logger.info("Sleeping for %d seconds...", RETRY_DELAY_SEC * 5)
+                logger.info("Sleeping for %d seconds before re-checking feed...", RETRY_DELAY_SEC * 5)
                 time.sleep(RETRY_DELAY_SEC * 5)
 
         except KeyboardInterrupt:

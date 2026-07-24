@@ -23,17 +23,22 @@ echo "📚 [3/5] Installing Python libraries from requirements.txt..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 4. Install Playwright Headless Chromium & OS dependencies
-echo "🌐 [4/5] Installing Playwright Chromium browser & Linux dependencies..."
-playwright install chromium
-sudo playwright install-deps chromium
+# 4. Generate PWA Icons
+echo "🎨 [4/5] Generating PWA icons..."
+python dashboard/static/icons/generate_icons.py
 
-# 5. Register Systemd Service for 24/7 Autostart & Self-Healing Recovery
-echo "🛠️ [5/5] Configuring 24/7 Systemd Service (ai-clipper.service)..."
+# 5. Register Systemd Services for 24/7 Autostart & Self-Healing Recovery
+echo "🛠️ [5/5] Configuring 24/7 Systemd Services (ai-clipper & ai-dashboard)..."
 sudo cp ai-clipper.service /etc/systemd/system/
+if [ -f "ai-dashboard.service" ]; then
+    sudo cp ai-dashboard.service /etc/systemd/system/
+fi
 sudo systemctl daemon-reload
-sudo systemctl enable ai-clipper.service
+sudo systemctl enable ai-clipper.service ai-dashboard.service || sudo systemctl enable ai-clipper.service
 sudo systemctl restart ai-clipper.service
+if systemctl list-unit-files | grep -q ai-dashboard.service; then
+    sudo systemctl restart ai-dashboard.service
+fi
 
 echo "=================================================================="
 echo "✅ DEPLOYMENT COMPLETED SUCCESSFULLY!"
@@ -42,4 +47,6 @@ echo "Bot status:"
 sudo systemctl status ai-clipper.service --no-pager
 echo ""
 echo "To monitor live logs, run: sudo journalctl -u ai-clipper.service -f"
+echo "To monitor dashboard logs, run: sudo journalctl -u ai-dashboard.service -f"
 echo "=================================================================="
+

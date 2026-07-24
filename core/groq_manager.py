@@ -111,13 +111,14 @@ class ResilientGroqClient:
 
     def extract_viral_clip(self, transcript_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyzes transcription data via Llama 3.3 70B to identify the most viral clip segment.
+        Analyzes transcription data via Llama 3.3 70B to identify the most viral clip segment,
+        assign a Viral Hook Score (1-100), a short minimalist caption, and hot trending hashtags.
         
         Args:
             transcript_data: Transcription dict containing text and word list with timestamps.
             
         Returns:
-            Dict with keys: 'start_time', 'end_time', 'title', 'hashtags'.
+            Dict with keys: 'start_time', 'end_time', 'title', 'caption', 'hashtags', 'viral_score'.
         """
         text_content = transcript_data.get("text", "")
         words = transcript_data.get("words") or transcript_data.get("segments", [])
@@ -127,41 +128,44 @@ class ResilientGroqClient:
         
         # Provide timestamp context snippet
         timestamped_summary = []
-        step = max(1, len(words) // 50) if words else 1
+        step = max(1, len(words) // 60) if words else 1
         for w in words[::step]:
             w_text = w.get("word") or w.get("text", "")
             w_start = float(w.get("start", 0.0))
             timestamped_summary.append(f"[{w_start:.1f}s]: {w_text}")
         
-        timestamp_snippet = "\n".join(timestamped_summary[:50])
+        timestamp_snippet = "\n".join(timestamped_summary[:60])
 
-        from config import TARGET_LANGUAGE
+        from config import TARGET_LANGUAGE, MIN_VIRAL_SCORE
 
-        lang_instruction = "in Indonesian language (Bahasa Indonesia) using viral clickbait style" if TARGET_LANGUAGE == "id" else "in English language using viral clickbait style"
+        lang_instruction = "in Indonesian (Bahasa Indonesia)" if TARGET_LANGUAGE == "id" else "in English"
 
-        system_prompt = f"""You are a master viral video editor specializing in YouTube Shorts and TikTok.
-Your mission is to find the single most engaging, high-retention clip from the provided speech transcript.
+        system_prompt = f"""You are an elite viral content producer specializing in TikTok, IG Reels, and YouTube Shorts.
+Your task is to analyze the speech transcript and select the SINGLE MOST VIRAL segment with high emotional hook and retention.
 
-STRICT CRITERIA:
-1. Duration MUST be strictly between {MIN_CLIP_DURATION} seconds and {MAX_CLIP_DURATION} seconds.
-2. The clip MUST start with a strong 3-second hook (an intrigue, controversial statement, or punchy question).
-3. EXCLUDE all greetings, introductions, self-promotions, call-to-actions, or channel slogans.
-4. Output title and hashtags {lang_instruction}.
-5. Output MUST be strict valid JSON ONLY, with NO extra markdown text, using exact format:
+STRICT REQUIREMENTS:
+1. Duration MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds.
+2. Calculate a 'viral_score' (integer 1-100) evaluating hook strength, curiosity gap, emotional peak, and punchline. Only assign >90 for genuinely elite viral moments.
+3. Generate 'title': A short, clickbait viral title (under 60 chars) {lang_instruction}.
+4. Generate 'caption': A SHORT, MINIMALIST 1-2 line aesthetic caption {lang_instruction} that engages viewers to comment.
+5. Generate 'hashtags': An array of 4-6 hot trending hashtags suitable for TikTok & Shorts (e.g., ["#fyp", "#viral", "#shorts", "#trending", "#mindset"]).
+6. Output MUST be strictly valid JSON matching this format:
 {{
-  "start_time": <float start timestamp in seconds>,
-  "end_time": <float end timestamp in seconds>,
-  "title": "<Engaging viral clickbait title under 60 chars>",
-  "hashtags": ["#Shorts", "#Viral", "#TopicHashtag1", "#TopicHashtag2"]
+  "viral_score": 95,
+  "start_time": 120.5,
+  "end_time": 155.0,
+  "title": "Viral Clickbait Title",
+  "caption": "Short minimalist caption line.",
+  "hashtags": ["#fyp", "#viral", "#shorts", "#trending"]
 }}"""
 
-        user_prompt = f"""TRANSCRIPT:
-{text_content[:6000]}
+        user_prompt = f"""TRANSCRIPT SNIPPET:
+{text_content[:7000]}
 
-TIMESTAMP SAMPLE SAMPLES:
+TIMESTAMP MARKS:
 {timestamp_snippet}
 
-Select the most viral clip duration between {MIN_CLIP_DURATION}s and {MAX_CLIP_DURATION}s."""
+Evaluate and select the best clip segment duration between {MIN_CLIP_DURATION}s and {MAX_CLIP_DURATION}s."""
 
         def _call_llama(client: Groq) -> Any:
             return client.chat.completions.create(
@@ -174,7 +178,7 @@ Select the most viral clip duration between {MIN_CLIP_DURATION}s and {MAX_CLIP_D
                 response_format={"type": "json_object"}
             )
 
-        logger.info("Querying Groq Llama 3.3 70B for viral clip selection...")
+        logger.info("Querying Groq Llama 3.3 70B for high-retention viral clip selection...")
         completion = self.execute_with_retry(_call_llama)
         raw_json_str = completion.choices[0].message.content.strip()
         
@@ -182,7 +186,6 @@ Select the most viral clip duration between {MIN_CLIP_DURATION}s and {MAX_CLIP_D
         try:
             clip_meta = json.loads(raw_json_str)
         except json.JSONDecodeError:
-            # Handle potential markdown code block wrapping
             if "```json" in raw_json_str:
                 raw_json_str = raw_json_str.split("```json")[1].split("```")[0].strip()
             elif "```" in raw_json_str:
@@ -199,10 +202,22 @@ Select the most viral clip duration between {MIN_CLIP_DURATION}s and {MAX_CLIP_D
                            duration, MIN_CLIP_DURATION, MAX_CLIP_DURATION)
             end_time = start_time + min(max(duration, MIN_CLIP_DURATION), MAX_CLIP_DURATION)
 
+        viral_score = int(clip_meta.get("viral_score", 90))
         clip_meta["start_time"] = round(start_time, 2)
         clip_meta["end_time"] = round(end_time, 2)
-        logger.info("Extracted clip metadata: Title='%s', Start=%.2fs, End=%.2fs (Duration=%.2fs)",
-                    clip_meta.get("title"), clip_meta["start_time"], clip_meta["end_time"],
-                    clip_meta["end_time"] - clip_meta["start_time"])
+        clip_meta["viral_score"] = viral_score
+        
+        # Ensure hashtags is a list or formatted string
+        raw_tags = clip_meta.get("hashtags", ["#fyp", "#viral", "#shorts", "#trending"])
+        if isinstance(raw_tags, list):
+            clip_meta["hashtags_str"] = " ".join(raw_tags)
+        else:
+            clip_meta["hashtags_str"] = str(raw_tags)
+
+        logger.info(
+            "Extracted clip metadata: Title='%s', Viral Score=%d, Start=%.2fs, End=%.2fs (Duration=%.2fs)",
+            clip_meta.get("title"), viral_score, clip_meta["start_time"], clip_meta["end_time"],
+            clip_meta["end_time"] - clip_meta["start_time"]
+        )
 
         return clip_meta

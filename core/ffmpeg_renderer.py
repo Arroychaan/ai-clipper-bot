@@ -61,18 +61,24 @@ def render_vertical_shorts(
     # Subtitle burn-in filter on foreground stream if provided
     if subtitle_path and os.path.exists(subtitle_path):
         escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
-        sub_style = (
-            "Fontsize=22,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,"
-            "BackColour=&H80000000&,Bold=1,Alignment=2,MarginV=120"
-        )
-        fg_filter = (
-            f"[0:v]scale={TARGET_WIDTH}:-1,"
-            f"subtitles='{escaped_sub_path}':force_style='{sub_style}'[fg]"
-        )
+        if subtitle_path.endswith(".ass"):
+            fg_filter = (
+                f"[0:v]scale={TARGET_WIDTH}:-1,"
+                f"ass='{escaped_sub_path}'[fg]"
+            )
+        else:
+            sub_style = (
+                "Fontsize=22,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,"
+                "BackColour=&H80000000&,Bold=1,Alignment=2,MarginV=120"
+            )
+            fg_filter = (
+                f"[0:v]scale={TARGET_WIDTH}:-1,"
+                f"subtitles='{escaped_sub_path}':force_style='{sub_style}'[fg]"
+            )
     else:
         fg_filter = f"[0:v]scale={TARGET_WIDTH}:-1[fg]"
 
-    overlay_filter = "[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]"
+    overlay_filter = "[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=60[outv]"
     filter_complex = f"{bg_filter}; {fg_filter}; {overlay_filter}"
 
     cmd = [
@@ -84,14 +90,14 @@ def render_vertical_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "22",
+        "-preset", "fast",
+        "-crf", "19",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "192k",
         output_path
     ]
 
-    logger.info("Executing FFmpeg render command...")
+    logger.info("Executing FFmpeg Full HD 60fps render command...")
     try:
         process = subprocess.run(
             cmd,
@@ -109,3 +115,4 @@ def render_vertical_shorts(
     except Exception as e:
         logger.error("Unexpected error during FFmpeg rendering: %s", str(e))
         return False
+

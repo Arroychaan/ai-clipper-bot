@@ -15,6 +15,7 @@ BASE_DIR: Path = Path(__file__).resolve().parent
 TEMP_DIR: Path = BASE_DIR / "temp"
 LOG_DIR: Path = BASE_DIR / "logs"
 TOKENS_DIR: Path = BASE_DIR / "config" / "tokens"
+CLIPS_DIR: Path = BASE_DIR / "output_clips"
 DB_PATH: Path = BASE_DIR / "bot_state.db"
 LOG_FILE_PATH: Path = LOG_DIR / "system.log"
 
@@ -22,6 +23,7 @@ LOG_FILE_PATH: Path = LOG_DIR / "system.log"
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(TOKENS_DIR, exist_ok=True)
+os.makedirs(CLIPS_DIR, exist_ok=True)
 
 # Parse up to 10 Groq API Keys from environment
 def _load_groq_keys() -> tuple[str, ...]:
@@ -43,8 +45,14 @@ GROQ_KEYS: tuple[str, ...] = _load_groq_keys()
 TARGET_WIDTH: int = 1080
 TARGET_HEIGHT: int = 1920
 MIN_CLIP_DURATION: float = 25.0
-MAX_CLIP_DURATION: float = 45.0
-TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "en").lower()  # 'en' for Global, 'id' for Indonesia market
+MAX_CLIP_DURATION: float = 55.0
+MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "90"))
+TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "id").lower()  # 'id' for Indonesia, 'en' for Global market
+
+# Dashboard & Web PWA Configuration
+DASHBOARD_HOST: str = os.getenv("DASHBOARD_HOST", "0.0.0.0")
+DASHBOARD_PORT: int = int(os.getenv("DASHBOARD_PORT", "8000"))
+DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", "admin123")
 
 # Schedule & Ramp-Up Configuration
 RAMPUP_MODE: bool = os.getenv("RAMPUP_MODE", "true").lower() in ("true", "1", "t", "yes")
@@ -53,7 +61,7 @@ STANDARD_INTERVAL_SEC: int = int(os.getenv("STANDARD_INTERVAL_SEC", "8640")) # ~
 RETRY_DELAY_SEC: int = int(os.getenv("RETRY_DELAY_SEC", "60"))
 
 # Target YouTube Sources / Feed Settings
-SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", "https://www.youtube.com/@HubermanLab/videos")
+SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", "https://www.youtube.com/@DennySumargo/videos")
 MAX_FEED_ITEMS: int = int(os.getenv("MAX_FEED_ITEMS", "25"))
 
 import base64

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI Clipper Bot - PWA Dashboard</title>
+  
+  <!-- PWA Settings -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+
+  <!-- Tailwind CSS & FontAwesome Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #0b0f19;
+      color: #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-nav {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-12 flex flex-col selection:bg-indigo-500 selection:text-white">
+
+  <!-- TOP BAR / NAVIGATION -->
+  <nav class="sticky top-0 z-50 glass-nav px-4 py-3 shadow-lg">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+          <i class="fa-solid fa-scissors text-white text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-extrabold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-indigo-300">
+            AI Clipper PWA
+          </h1>
+          <p class="text-xs text-slate-400 font-medium flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Engine 24/7 Online
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-2">
+        <button id="pwaInstallBtn" onclick="installPWA()" class="hidden px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all">
+          <i class="fa-solid fa-download"></i>
+          <span>Install App</span>
+        </button>
+        <button onclick="loadDashboard()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all border border-slate-700" title="Refresh">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 pt-6 flex-1 w-full space-y-6">
+
+    <!-- STATS SUMMARY CARDS -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <!-- Total Clips -->
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-400">Total Klip</p>
+          <p id="statTotal" class="text-2xl font-extrabold text-white mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-lg border border-blue-500/20">
+          <i class="fa-solid fa-film"></i>
+        </div>
+      </div>
+
+      <!-- Ready to Post -->
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-400">Siap Upload</p>
+          <p id="statReady" class="text-2xl font-extrabold text-amber-400 mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-lg border border-amber-500/20">
+          <i class="fa-solid fa-clock"></i>
+        </div>
+      </div>
+
+      <!-- Uploaded / Posted -->
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-400">Sudah Post</p>
+          <p id="statPosted" class="text-2xl font-extrabold text-emerald-400 mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg border border-emerald-500/20">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+      </div>
+
+      <!-- Avg Score -->
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-400">Rata-rata Viral</p>
+          <p id="statAvgScore" class="text-2xl font-extrabold text-rose-400 mt-1">0.0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-lg border border-rose-500/20">
+          <i class="fa-solid fa-fire"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER TABS & SEARCH -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+      <!-- Tabs -->
+      <div class="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+        <button onclick="setFilter('READY')" id="tabREADY" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-sm">
+          📥 Siap Upload
+        </button>
+        <button onclick="setFilter('POSTED')" id="tabPOSTED" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+          ✅ Sudah Post
+        </button>
+        <button onclick="setFilter('ALL')" id="tabALL" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+          📁 Semua Klip
+        </button>
+      </div>
+
+      <!-- Viral Filter indicator -->
+      <div class="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl font-medium">
+        <i class="fa-solid fa-fire text-rose-500"></i>
+        <span>Only Score > 90 Active</span>
+      </div>
+    </div>
+
+    <!-- CLIPS GRID CONTAINER -->
+    <div id="clipsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Loading State -->
+      <div class="col-span-full py-16 text-center text-slate-500">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-3 text-indigo-500"></i>
+        <p class="text-sm">Memuat daftar klip video...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    let currentFilter = 'READY';
+    let deferredPrompt = null;
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js')
+        .then(reg => console.log('PWA Service Worker registered'))
+        .catch(err => console.log('PWA Service Worker error:', err));
+    }
+
+    // PWA Install Event Listener
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installBtn = document.getElementById('pwaInstallBtn');
+      if (installBtn) installBtn.classList.remove('hidden');
+    });
+
+    function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            showToast('Aplikasi berhasil di-install!', 'success');
+          }
+          deferredPrompt = null;
+          document.getElementById('pwaInstallBtn').classList.add('hidden');
+        });
+      }
+    }
+
+    // Fetch Stats & Clips
+    async function loadDashboard() {
+      try {
+        const statsRes = await fetch('/api/stats');
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          document.getElementById('statTotal').innerText = stats.total_clips || 0;
+          document.getElementById('statReady').innerText = stats.ready_clips || 0;
+          document.getElementById('statPosted').innerText = stats.posted_clips || 0;
+          document.getElementById('statAvgScore').innerText = (stats.avg_viral_score || 0).toFixed(1);
+        }
+
+        const clipsRes = await fetch(`/api/clips?status=${currentFilter}`);
+        if (clipsRes.ok) {
+          const clips = await clipsRes.json();
+          renderClips(clips);
+        }
+      } catch (err) {
+        console.error('Error loading dashboard:', err);
+        showToast('Gagal memuat data dari server', 'error');
+      }
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      ['READY', 'POSTED', 'ALL'].forEach(f => {
+        const btn = document.getElementById(`tab${f}`);
+        if (f === filter) {
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-sm';
+        } else {
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        }
+      });
+      loadDashboard();
+    }
+
+    function renderClips(clips) {
+      const grid = document.getElementById('clipsGrid');
+      if (!clips || clips.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full py-20 text-center glass-card rounded-2xl p-8 border border-slate-800">
+            <div class="w-16 h-16 rounded-full bg-slate-800 text-slate-500 flex items-center justify-center mx-auto mb-4 text-2xl">
+              <i class="fa-solid fa-box-open"></i>
+            </div>
+            <h3 class="text-base font-bold text-white mb-1">Belum Ada Klip Video</h3>
+            <p class="text-xs text-slate-400 max-w-sm mx-auto">
+              Bot sedang mengeklip video 24/7 secara otomatis. Klip baru dengan skor viral > 90 akan muncul di sini.
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = clips.map(clip => `
+        <div class="glass-card rounded-2xl overflow-hidden flex flex-col border border-slate-800/80 shadow-xl transition-all hover:border-slate-700">
+          
+          <!-- VIDEO PLAYER CONTAINER (9:16 VERTICAL ASPECT) -->
+          <div class="relative bg-black aspect-[9/16] w-full overflow-hidden group">
+            <video 
+              src="/clips/${clip.clip_path}" 
+              controls 
+              preload="metadata"
+              playsinline
+              class="w-full h-full object-cover"
+            ></video>
+
+            <!-- Top Badges Overlay -->
+            <div class="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+              <!-- Score Badge -->
+              <span class="px-2.5 py-1 rounded-lg bg-rose-600/90 text-white text-xs font-black flex items-center gap-1 shadow-lg backdrop-blur-md">
+                <i class="fa-solid fa-fire text-amber-300"></i> ${clip.viral_score}/100
+              </span>
+
+              <!-- Status Badge -->
+              <span class="px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg backdrop-blur-md ${
+                clip.status === 'POSTED' 
+                  ? 'bg-emerald-600/90 text-white' 
+                  : 'bg-amber-500/90 text-white'
+              }">
+                ${clip.status === 'POSTED' ? '✅ POSTED' : '📥 READY'}
+              </span>
+            </div>
+
+            <!-- Duration Badge -->
+            <div class="absolute bottom-3 right-3 pointer-events-none">
+              <span class="px-2 py-0.5 rounded bg-black/70 text-slate-200 text-[10px] font-medium backdrop-blur-sm">
+                ${clip.duration}s
+              </span>
+            </div>
+          </div>
+
+          <!-- CONTENT BODY -->
+          <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
+            
+            <div>
+              <!-- Headline Title -->
+              <h2 class="font-extrabold text-sm text-white line-clamp-2 leading-snug mb-2" title="${escapeHtml(clip.clip_title)}">
+                ${escapeHtml(clip.clip_title)}
+              </h2>
+
+              <!-- Caption & Hashtags Box -->
+              <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 text-xs text-slate-300 space-y-1 font-mono select-all">
+                <p class="text-slate-200 font-sans">${escapeHtml(clip.caption)}</p>
+                <p class="text-indigo-400 font-semibold text-[11px]">${escapeHtml(clip.hashtags)}</p>
+              </div>
+            </div>
+
+            <!-- ACTION BUTTONS -->
+            <div class="space-y-2 pt-2 border-t border-slate-800/80">
+              <!-- Copy Caption & Hashtags Button -->
+              <button 
+                onclick="copyCaption('${escapeJs(clip.caption)} ${escapeJs(clip.hashtags)}')"
+                class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98]"
+              >
+                <i class="fa-regular fa-copy text-sm"></i>
+                <span>Copy Caption & Tagar</span>
+              </button>
+
+              <div class="grid grid-cols-3 gap-1.5">
+                <!-- Direct Download MP4 -->
+                <a 
+                  href="/clips/${clip.clip_path}" 
+                  download="clip_${clip.clip_id}.mp4"
+                  class="py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1 border border-slate-700 transition-all"
+                  title="Download MP4 Video"
+                >
+                  <i class="fa-solid fa-download text-emerald-400"></i>
+                  <span>Download</span>
+                </a>
+
+                <!-- Mark as Posted / Ready Toggle -->
+                <button 
+                  onclick="toggleStatus('${clip.clip_id}', '${clip.status}')"
+                  class="py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1 border border-slate-700 transition-all"
+                >
+                  <i class="fa-solid ${clip.status === 'POSTED' ? 'fa-rotate-left text-amber-400' : 'fa-check text-emerald-400'}"></i>
+                  <span>${clip.status === 'POSTED' ? 'Undo' : 'Mark Post'}</span>
+                </button>
+
+                <!-- Delete Clip -->
+                <button 
+                  onclick="deleteClip('${clip.clip_id}')"
+                  class="py-2 px-2 rounded-xl bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 text-[11px] font-semibold flex items-center justify-center gap-1 border border-slate-700 hover:border-rose-800 transition-all"
+                  title="Hapus Klip"
+                >
+                  <i class="fa-regular fa-trash-can text-rose-400"></i>
+                  <span>Hapus</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      `).join('');
+    }
+
+    // Copy to Clipboard
+    async function copyCaption(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Caption & Tagar berhasil dicopy!', 'success');
+      } catch (err) {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast('Caption & Tagar berhasil dicopy!', 'success');
+      }
+    }
+
+    // Toggle Status API
+    async function toggleStatus(clipId, currentStatus) {
+      const newStatus = currentStatus === 'POSTED' ? 'READY' : 'POSTED';
+      try {
+        const res = await fetch(`/api/clips/${clipId}/status?status=${newStatus}`, { method: 'POST' });
+        if (res.ok) {
+          showToast(`Status diubah ke ${newStatus}`, 'success');
+          loadDashboard();
+        }
+      } catch (err) {
+        showToast('Gagal mengubah status', 'error');
+      }
+    }
+
+    // Delete Clip API
+    async function deleteClip(clipId) {
+      if (!confirm('Apakah Anda yakin ingin menghapus klip ini?')) return;
+      try {
+        const res = await fetch(`/api/clips/${clipId}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast('Klip berhasil dihapus', 'success');
+          loadDashboard();
+        }
+      } catch (err) {
+        showToast('Gagal menghapus klip', 'error');
+      }
+    }
+
+    // Helper Toast Notification
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-indigo-600';
+      const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+
+      toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0`;
+      toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span>${message}</span>`;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function escapeJs(str) {
+      return (str || '').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
+    }
+
+    // Initial Load
+    document.addEventListener('DOMContentLoaded', loadDashboard);
+  </script>
+</body>
+</html>

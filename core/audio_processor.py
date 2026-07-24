@@ -106,36 +106,36 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
 
 
-def generate_subtitle_file(
+def _format_ass_timestamp(seconds: float) -> str:
+    """Formats floating-point seconds into ASS timestamp format: H:MM:SS.cs"""
+    total_cs = int(max(0.0, seconds) * 100)
+    hours = total_cs // (3600 * 100)
+    total_cs %= (3600 * 100)
+    minutes = total_cs // (60 * 100)
+    total_cs %= (60 * 100)
+    secs = total_cs // 100
+    cs = total_cs % 100
+    return f"{hours:01d}:{minutes:02d}:{secs:02d}.{cs:02d}"
+
+
+def generate_ass_subtitle_file(
     words: List[Dict[str, Any]],
     start_sec: float,
     end_sec: float,
-    output_srt_path: str,
+    output_ass_path: str,
     max_words_per_group: int = 3
 ) -> str:
     """
-    Generates a synchronized SRT subtitle file from Whisper word-level timestamps.
-    Normalizes timestamps to begin at 00:00:00 for the trimmed video clip.
-    
-    Args:
-        words: List of word dicts containing 'word', 'start', and 'end'.
-        start_sec: Start time of video clip.
-        end_sec: End time of video clip.
-        output_srt_path: Output filepath for generated .srt file.
-        max_words_per_group: Maximum words per displayed subtitle chunk (default 3 for short video punchiness).
-        
-    Returns:
-        str: Path to the generated .srt file.
+    Generates a CapCut-style ASS (Advanced SubStation Alpha) subtitle file with active word highlighting.
+    Active word is highlighted in vibrant yellow with bold outline and shadow.
     """
-    logger.info("Generating subtitle file at: %s", output_srt_path)
+    logger.info("Generating CapCut-style ASS subtitle file at: %s", output_ass_path)
 
-    # Filter words strictly falling within the clip duration
     clip_words = []
     for w in words:
         w_start = float(w.get("start", 0.0))
         w_end = float(w.get("end", 0.0))
         if w_start >= start_sec and w_end <= end_sec:
-            # Shift timestamps relative to clip start
             rel_start = max(0.0, w_start - start_sec)
             rel_end = max(rel_start + 0.1, w_end - start_sec)
             word_val = str(w.get("word") or w.get("text") or "").strip().upper()
@@ -146,7 +146,89 @@ def generate_subtitle_file(
                     "end": rel_end
                 })
 
-    # Group words into short 2-3 word high-retention subtitle groups
+    if not clip_words:
+        # Fallback to SRT if no word timestamps
+        return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
+
+    sub_entries = []
+    current_group = []
+    for word_info in clip_words:
+        current_group.append(word_info)
+        if len(current_group) >= max_words_per_group:
+            sub_entries.append(current_group)
+            current_group = []
+    if current_group:
+        sub_entries.append(current_group)
+
+    ass_header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: CapCut, Arial, 68, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 4, 3, 2, 40, 40, 420, 1
+Style: CapCutYellow, Arial, 72, &H0000FFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 4, 2, 40, 40, 420, 1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    dialogue_lines = []
+    for group in sub_entries:
+        for active_idx, w_active in enumerate(group):
+            w_start = w_active["start"]
+            w_end = w_active["end"]
+            if (w_end - w_start) < 0.15:
+                w_end = w_start + 0.15
+
+            start_ts = _format_ass_timestamp(w_start)
+            end_ts = _format_ass_timestamp(w_end)
+
+            formatted_words = []
+            for idx, item in enumerate(group):
+                if idx == active_idx:
+                    formatted_words.append(f"{{\\rCapCutYellow}}{item['word']}{{\\rCapCut}}")
+                else:
+                    formatted_words.append(item["word"])
+
+            text_line = " ".join(formatted_words)
+            dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{text_line}")
+
+    with open(output_ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header + "\n".join(dialogue_lines) + "\n")
+
+    logger.info("Successfully generated ASS subtitle file with CapCut active word highlight (%d events)", len(dialogue_lines))
+    return output_ass_path
+
+
+def generate_subtitle_file(
+    words: List[Dict[str, Any]],
+    start_sec: float,
+    end_sec: float,
+    output_srt_path: str,
+    max_words_per_group: int = 3
+) -> str:
+    """
+    Generates a synchronized SRT subtitle file from Whisper word-level timestamps.
+    """
+    logger.info("Generating subtitle file at: %s", output_srt_path)
+
+    clip_words = []
+    for w in words:
+        w_start = float(w.get("start", 0.0))
+        w_end = float(w.get("end", 0.0))
+        if w_start >= start_sec and w_end <= end_sec:
+            rel_start = max(0.0, w_start - start_sec)
+            rel_end = max(rel_start + 0.1, w_end - start_sec)
+            word_val = str(w.get("word") or w.get("text") or "").strip().upper()
+            if word_val:
+                clip_words.append({
+                    "word": word_val,
+                    "start": rel_start,
+                    "end": rel_end
+                })
+
     sub_entries = []
     current_group = []
     
@@ -159,14 +241,12 @@ def generate_subtitle_file(
     if current_group:
         sub_entries.append(current_group)
 
-    # Build SRT file content
     srt_lines = []
     for idx, group in enumerate(sub_entries, start=1):
         group_text = " ".join(item["word"] for item in group)
         group_start = group[0]["start"]
         group_end = group[-1]["end"]
         
-        # Ensure minimum subtitle display duration (300ms) for readability
         if (group_end - group_start) < 0.3:
             group_end = group_start + 0.3
             
@@ -182,3 +262,4 @@ def generate_subtitle_file(
 
     logger.info("Successfully generated SRT subtitle file (%d blocks created)", len(sub_entries))
     return output_srt_path
+
