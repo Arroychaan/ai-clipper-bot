@@ -151,18 +151,26 @@ def process_single_video(
         logger.info("👉 [STEP 9/9] Publishing video to YouTube Shorts & TikTok...")
         description = f"{title}\n\n" + " ".join(hashtags)
         
-        yt_uploader.upload_short(
+        yt_res = yt_uploader.upload_short(
             video_path=output_clip_path,
             title=title,
             description=description,
             tags=[h.replace("#", "") for h in hashtags]
         )
 
-        tt_uploader.upload_short(
+        tt_res = tt_uploader.upload_short(
             video_path=output_clip_path,
             caption=title,
             hashtags=hashtags
         )
+
+        if not yt_res and not tt_res:
+            logger.warning(
+                "⚠️ [PUBLISHING NOTICE] Video clip rendered successfully (%s), but upload was SKIPPED on both YouTube and TikTok because YOUTUBE_TOKEN_BASE64 and TIKTOK_COOKIES_BASE64 secrets are not configured or valid in GitHub Secrets!",
+                output_clip_path
+            )
+        else:
+            logger.info("🎉 Video successfully published! YouTube ID: %s | TikTok Status: %s", yt_res or "Skipped", "Uploaded" if tt_res else "Skipped")
 
         # 10. Mark DB status to COMPLETED
         mark_status(video_id, "COMPLETED")
