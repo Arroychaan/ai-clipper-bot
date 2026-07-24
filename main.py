@@ -213,13 +213,25 @@ def main_loop() -> None:
 
     groq_client = ResilientGroqClient()
 
+def main_loop() -> None:
+    """Main infinite operational loop for 24/7 autonomous deployment."""
+    logger.info("Initializing 24/7 AI Clipper Engine...")
+    init_db()
+
+    groq_client = ResilientGroqClient()
     logger.info("Bot engine operational! Entering 24/7 infinite clipping loop...")
+
+    last_mode = None
 
     while True:
         try:
             # Dynamically read active mode setting from SQLite ('PODCAST' or 'WINDAH')
             active_mode = get_setting("active_mode", "PODCAST").upper().strip()
             
+            if active_mode != last_mode:
+                logger.info("⚡ MODE SWITCH DETECTED: Active Mode is now '%s'", active_mode)
+                last_mode = active_mode
+
             if active_mode == "WINDAH":
                 feed_url = "https://www.youtube.com/@windahbasudara/videos"
                 force_gaming = True
@@ -234,6 +246,12 @@ def main_loop() -> None:
             processed_any = False
             failed_attempts = 0
             for item in videos:
+                # Re-verify active mode before processing each video candidate
+                current_mode = get_setting("active_mode", "PODCAST").upper().strip()
+                if current_mode != active_mode:
+                    logger.warning("Active mode switched from %s to %s mid-cycle. Aborting current feed queue...", active_mode, current_mode)
+                    break
+
                 v_id = item["id"]
                 if is_processed(v_id):
                     logger.info("Video ID '%s' already processed. Skipping...", v_id)
@@ -242,14 +260,13 @@ def main_loop() -> None:
                 logger.info("Found unprocessed candidate video ID: %s ('%s')", v_id, item.get("title"))
                 success = process_single_video(item, groq_client, force_gaming_mode=force_gaming)
 
-                
                 if success:
                     processed_any = True
                     logger.info("Cycle success. Next video...")
                     if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
                         logger.info("SINGLE_RUN mode active. Exiting process after successful run.")
                         return
-                    time.sleep(10)  # Brief pause before checking next video
+                    time.sleep(5)  # Brief pause before checking next video
                 else:
                     failed_attempts += 1
                     logger.warning("Video processing failed for candidate '%s' (Attempt %d/3).", v_id, failed_attempts)
@@ -261,12 +278,18 @@ def main_loop() -> None:
                     continue
 
             if not processed_any:
-                logger.info("No new unprocessed videos found in feed.")
+                logger.info("No new unprocessed videos found in %s feed. Sleeping with 2s mode polling...", active_mode)
                 if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
                     logger.info("SINGLE_RUN mode active. Exiting cleanly.")
                     return
-                logger.info("Sleeping for %d seconds before re-checking feed...", RETRY_DELAY_SEC * 5)
-                time.sleep(RETRY_DELAY_SEC * 5)
+
+                # Sleep in 2-second increments so mode toggle takes effect immediately
+                for _ in range(60):  # Total ~120s sleep, polling every 2s
+                    time.sleep(2)
+                    check_mode = get_setting("active_mode", "PODCAST").upper().strip()
+                    if check_mode != active_mode:
+                        logger.info("⚡ Mode switched to '%s' during idle sleep! Waking up immediately...", check_mode)
+                        break
 
         except KeyboardInterrupt:
             logger.info("Received termination signal (KeyboardInterrupt). Shutting down bot gracefully.")
@@ -274,6 +297,7 @@ def main_loop() -> None:
         except Exception as e:
             logger.critical("Uncaught error in main loop: %s. Sleeping %ds before continuing...", str(e), RETRY_DELAY_SEC, exc_info=True)
             time.sleep(RETRY_DELAY_SEC)
+
 
 
 if __name__ == "__main__":
