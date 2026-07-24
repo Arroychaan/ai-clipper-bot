@@ -194,13 +194,39 @@ class YouTubeFetcher:
                 video_id = info.get("id", "")
                 audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
         except Exception as primary_err:
-            logger.warning("Primary audio download failed (%s). Retrying via web_creator client...", str(primary_err))
-            ydl_opts.pop("cookiefile", None)
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web_creator", "android_vr"]}}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(youtube_url, download=True)
-                video_id = info.get("id", "")
-                audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
+            logger.warning("Primary audio download hit bot check (%s). Extracting direct stream URL via FFmpeg...", str(primary_err))
+            try:
+                ydl_opts_stream = {
+                    "format": "bestaudio[ext=m4a]/bestaudio/best",
+                    "nocheckcertificate": True,
+                    "quiet": True
+                }
+                if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
+                    ydl_opts_stream["cookiefile"] = cookies_path
+
+                with yt_dlp.YoutubeDL(ydl_opts_stream) as ydl:
+                    info = ydl.extract_info(youtube_url, download=False)
+                    video_id = info.get("id", "")
+                    stream_url = info.get("url")
+                    if not stream_url and "requested_formats" in info:
+                        stream_url = info["requested_formats"][-1].get("url")
+
+                    if not stream_url:
+                        raise RuntimeError("Could not extract direct stream URL from YoutubeDL info")
+
+                    audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
+                    ffmpeg_cmd = [
+                        "ffmpeg", "-y",
+                        "-i", stream_url,
+                        "-ar", "16000",
+                        "-ac", "1",
+                        audio_path
+                    ]
+                    subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            except Exception as stream_err:
+                logger.error("Direct FFmpeg stream extraction also failed: %s", str(stream_err))
+                raise primary_err
+
 
 
             
