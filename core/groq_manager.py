@@ -120,15 +120,18 @@ class ResilientGroqClient:
             Dict with keys: 'start_time', 'end_time', 'title', 'hashtags'.
         """
         text_content = transcript_data.get("text", "")
-        words = transcript_data.get("words", [])
+        words = transcript_data.get("words") or transcript_data.get("segments", [])
         
         if not text_content and words:
-            text_content = " ".join(w.get("word", "") for w in words)
+            text_content = " ".join(w.get("word") or w.get("text", "") for w in words)
         
         # Provide timestamp context snippet
         timestamped_summary = []
-        for w in words[::15]: # Sample every ~15 words to keep prompt concise
-            timestamped_summary.append(f"[{w.get('start', 0):.1f}s]: {w.get('word', '')}")
+        step = max(1, len(words) // 50) if words else 1
+        for w in words[::step]:
+            w_text = w.get("word") or w.get("text", "")
+            w_start = float(w.get("start", 0.0))
+            timestamped_summary.append(f"[{w_start:.1f}s]: {w_text}")
         
         timestamp_snippet = "\n".join(timestamped_summary[:50])
 
