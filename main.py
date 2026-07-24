@@ -172,8 +172,10 @@ def process_single_video(
             words=clip_words if use_relative_zero else (transcript_data.get("words") or transcript_data.get("segments", [])),
             start_sec=0.0 if use_relative_zero else start_sec,
             end_sec=duration if use_relative_zero else end_sec,
-            output_ass_path=sub_path
+            output_ass_path=sub_path,
+            clip_audio_path=clip_audio_path if os.path.exists(clip_audio_path) else None
         )
+
 
 
         # 6. Render Full HD 9:16 vertical short using FFmpeg
