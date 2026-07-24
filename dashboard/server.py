@@ -7,11 +7,13 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query, Response, Depends, status
+from fastapi import FastAPI, HTTPException, Query, Response, Depends, status, BackgroundTasks
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import uvicorn
+
 
 # Ensure parent directory is in Python path for imports
 BASE_DIR = Path(__file__).resolve().parent.parent
