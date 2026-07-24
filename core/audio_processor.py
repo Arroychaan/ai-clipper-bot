@@ -232,20 +232,33 @@ def generate_ass_subtitle_file(
         logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
-    # Group words into 3-4 word readable phrases (~22 chars max per phrase)
+    # Group words into natural phrase clusters based on:
+    # 1. Silence pauses (>= 0.30s gap = speaker took a breath or paused) -> IMMEDIATE PHRASE CUT & CLEAR SCREEN
+    # 2. Punctuation marks (,, ., !, ?, ;, :) -> IMMEDIATE PHRASE CUT
+    # 3. Maximum 3-4 words or 22 characters per phrase
     phrase_groups = []
     current_phrase = []
     current_char_len = 0
 
     for w in clip_words:
+        if current_phrase:
+            prev_word_end = current_phrase[-1]["end"]
+            curr_word_start = w["start"]
+            silence_gap = curr_word_start - prev_word_end
+            prev_text = current_phrase[-1]["word"]
+            has_punctuation = any(p in prev_text for p in [",", ".", "!", "?", ";", ":"])
+
+            if silence_gap >= 0.30 or has_punctuation or len(current_phrase) >= 4 or current_char_len >= 22:
+                phrase_groups.append(current_phrase)
+                current_phrase = []
+                current_char_len = 0
+
         current_phrase.append(w)
         current_char_len += len(w["word"])
-        if len(current_phrase) >= 3 or current_char_len >= 22:
-            phrase_groups.append(current_phrase)
-            current_phrase = []
-            current_char_len = 0
+
     if current_phrase:
         phrase_groups.append(current_phrase)
+
 
     ass_header = """[Script Info]
 ScriptType: v4.00+
