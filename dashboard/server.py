@@ -61,11 +61,7 @@ def check_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     return credentials.username
 
 
-@app.on_event("startup")
-def on_startup():
-    """Initializes SQLite database schema upon startup."""
-    init_db()
-
+# --- DASHBOARD & ADMIN PAGES ---
 
 @app.get("/", response_class=HTMLResponse)
 def get_dashboard_html():
@@ -74,6 +70,16 @@ def get_dashboard_html():
     if not index_file.exists():
         raise HTTPException(status_code=404, detail="Dashboard template index.html not found")
     with open(index_file, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def get_admin_html():
+    """Serves the Admin System Log Inspector HTML interface."""
+    admin_file = TEMPLATES_DIR / "admin.html"
+    if not admin_file.exists():
+        raise HTTPException(status_code=404, detail="Admin template admin.html not found")
+    with open(admin_file, "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -197,6 +203,93 @@ def api_set_mode(payload: ModePayload):
         raise HTTPException(status_code=400, detail="Invalid mode. Must be 'PODCAST' or 'WINDAH'")
     set_setting("active_mode", target_mode)
     return {"status": "success", "mode": target_mode}
+
+
+# --- ADMIN LOG INSPECTOR API ENDPOINTS ---
+
+@app.get("/api/admin/logs")
+def api_get_admin_logs(level: str = Query("ALL"), limit: int = Query(300)):
+    """Reads system log lines from LOG_FILE_PATH with optional filtering."""
+    if not LOG_FILE_PATH.exists():
+        return {"logs": [], "total_lines": 0, "error_count": 0, "warning_count": 0}
+
+    try:
+        with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read log file: {e}")
+
+    total_lines = len(lines)
+    error_count = sum(1 for line in lines if any(k in line for k in ("ERROR", "CRITICAL", "Failed", "Exception")))
+    warning_count = sum(1 for line in lines if "WARNING" in line)
+
+    target_level = level.upper().strip()
+    filtered_lines = []
+
+    for line in reversed(lines):
+        line_clean = line.rstrip()
+        if not line_clean:
+            continue
+
+        if target_level == "ERROR":
+            if any(k in line_clean for k in ("ERROR", "CRITICAL", "Failed", "Exception")):
+                filtered_lines.append(line_clean)
+        elif target_level == "WARNING":
+            if "WARNING" in line_clean:
+                filtered_lines.append(line_clean)
+        else:
+            filtered_lines.append(line_clean)
+
+        if len(filtered_lines) >= limit:
+            break
+
+    filtered_lines.reverse()
+    return {
+        "logs": filtered_lines,
+        "total_lines": total_lines,
+        "error_count": error_count,
+        "warning_count": warning_count
+    }
+
+
+@app.get("/api/admin/failed-videos")
+def api_get_failed_videos():
+    """Returns list of videos that failed during processing with their error messages."""
+    from core.db_manager import get_connection
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT p.video_id, p.status, p.error_message, p.processed_at, c.title
+            FROM processed_videos p
+            LEFT JOIN candidate_videos c ON p.video_id = c.video_id
+            WHERE p.status = 'FAILED'
+            ORDER BY p.processed_at DESC
+            """
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "video_id": row["video_id"],
+                "status": row["status"],
+                "error_message": row["error_message"],
+                "processed_at": row["processed_at"],
+                "title": row["title"] or f"Video ({row['video_id']})"
+            }
+            for row in rows
+        ]
+
+
+@app.post("/api/admin/clear-logs")
+def api_clear_admin_logs():
+    """Clears or truncates the server log file."""
+    if LOG_FILE_PATH.exists():
+        try:
+            with open(LOG_FILE_PATH, "w", encoding="utf-8") as f:
+                f.write("")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to clear log file: {e}")
+    return {"message": "Server log file cleared successfully"}
 
 
 def run_dashboard():

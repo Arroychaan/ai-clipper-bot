@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin System Log Monitor - AI Clipper Bot</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #030712;
+      color: #f3f4f6;
+      font-family: 'Inter', sans-serif;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .terminal-window {
+      background-color: #090d16;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1f2937;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #374151;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-rose-500 selection:text-white">
+
+  <!-- NAVBAR -->
+  <nav class="sticky top-0 z-40 glass-card border-b border-slate-800 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <a href="/" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all border border-slate-700" title="Kembali ke Dashboard">
+          <i class="fa-solid fa-arrow-left text-sm"></i>
+        </a>
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-600/30">
+          <i class="fa-solid fa-bug text-white text-base"></i>
+        </div>
+        <div>
+          <h1 class="text-sm font-extrabold text-white tracking-wide flex items-center gap-2">
+            Server Error & System Log Inspector
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">ADMIN</span>
+          </h1>
+          <p class="text-xs text-slate-400 font-medium flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live Log Stream 24/7
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <button onclick="fetchLogs()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-all">
+          <i class="fa-solid fa-rotate"></i>
+          <span>Refresh</span>
+        </button>
+        <button onclick="clearServerLogs()" class="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 border border-rose-500/30 transition-all">
+          <i class="fa-solid fa-trash-can"></i>
+          <span>Bersihkan Log</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="max-w-7xl mx-auto px-4 pt-6 pb-12 flex-1 w-full space-y-6">
+
+    <!-- METRICS SUMMARY CARDS -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-400">Total Baris Log</p>
+          <p id="metricTotal" class="text-2xl font-extrabold text-white mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-lg border border-blue-500/20">
+          <i class="fa-solid fa-list-check"></i>
+        </div>
+      </div>
+
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-rose-400">Total Error</p>
+          <p id="metricErrors" class="text-2xl font-extrabold text-rose-400 mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-lg border border-rose-500/20">
+          <i class="fa-solid fa-circle-exclamation"></i>
+        </div>
+      </div>
+
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-amber-400">Total Peringatan</p>
+          <p id="metricWarnings" class="text-2xl font-extrabold text-amber-400 mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-lg border border-amber-500/20">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+      </div>
+
+      <div class="glass-card p-4 rounded-2xl flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-purple-400">Video Failed</p>
+          <p id="metricFailedVideos" class="text-2xl font-extrabold text-purple-400 mt-1">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-lg border border-purple-500/20">
+          <i class="fa-solid fa-video-slash"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER & CONTROL BAR -->
+    <div class="glass-card p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+      <!-- Search Input -->
+      <div class="w-full md:w-96 relative">
+        <i class="fa-solid fa-magnifying-glass text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 text-xs"></i>
+        <input type="text" id="logSearchInput" oninput="filterLogsLocally()" placeholder="Cari keyword error (misal: yt-dlp, whisper, ffmpeg, DRM)..." 
+               class="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition-all">
+      </div>
+
+      <!-- Level Filter Tabs -->
+      <div class="flex items-center space-x-1.5 overflow-x-auto w-full md:w-auto">
+        <button onclick="setFilterLevel('ERROR')" id="btnLevelError" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white shadow-md transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-exclamation"></i> ERROR Only
+        </button>
+        <button onclick="setFilterLevel('WARNING')" id="btnLevelWarning" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-triangle-exclamation"></i> WARNING
+        </button>
+        <button onclick="setFilterLevel('ALL')" id="btnLevelAll" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-list"></i> SEMUA LOG
+        </button>
+        <button onclick="setFilterLevel('FAILED')" id="btnLevelFailed" class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-video-slash"></i> FAILED VIDEOS
+        </button>
+      </div>
+
+      <!-- Auto Refresh Toggle -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh()" class="sr-only peer">
+          <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+        </label>
+        <span class="text-xs text-slate-400 font-medium">Auto-Refresh (3s)</span>
+      </div>
+    </div>
+
+    <!-- TERMINAL-STYLE LOG VIEWER WINDOW -->
+    <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col h-[600px]">
+      <!-- Terminal Header -->
+      <div class="bg-slate-900/90 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <div class="w-3 h-3 rounded-full bg-rose-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+          <span class="text-xs font-mono text-slate-400 ml-2">server-stdout.log</span>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button onclick="copyTerminalText()" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-all">
+            <i class="fa-solid fa-copy"></i> Copy Log
+          </button>
+          <button onclick="scrollToTerminalBottom()" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-all">
+            <i class="fa-solid fa-arrow-down-long"></i> Ke Bawah
+          </button>
+        </div>
+      </div>
+
+      <!-- Terminal Body -->
+      <div id="terminalBody" class="terminal-window p-4 flex-1 overflow-y-auto font-mono text-xs space-y-1.5 leading-relaxed">
+        <div class="text-slate-500 italic">Memuat data log server...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    let rawLogLines = [];
+    let failedVideosList = [];
+    let currentFilterLevel = 'ERROR';
+    let autoRefreshTimer = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchLogs();
+      toggleAutoRefresh();
+    });
+
+    function toggleAutoRefresh() {
+      const isChecked = document.getElementById('autoRefreshToggle').checked;
+      if (isChecked) {
+        if (!autoRefreshTimer) {
+          autoRefreshTimer = setInterval(fetchLogs, 3000);
+        }
+      } else {
+        if (autoRefreshTimer) {
+          clearInterval(autoRefreshTimer);
+          autoRefreshTimer = null;
+        }
+      }
+    }
+
+    async function fetchLogs() {
+      try {
+        const [resLogs, resFailed] = await Promise.all([
+          fetch(`/api/admin/logs?level=${currentFilterLevel}`),
+          fetch('/api/admin/failed-videos')
+        ]);
+
+        if (resLogs.ok) {
+          const dataLogs = await resLogs.json();
+          rawLogLines = dataLogs.logs || [];
+          document.getElementById('metricTotal').innerText = dataLogs.total_lines || 0;
+          document.getElementById('metricErrors').innerText = dataLogs.error_count || 0;
+          document.getElementById('metricWarnings').innerText = dataLogs.warning_count || 0;
+        }
+
+        if (resFailed.ok) {
+          failedVideosList = await resFailed.json();
+          document.getElementById('metricFailedVideos').innerText = failedVideosList.length || 0;
+        }
+
+        renderTerminalLogs();
+      } catch (e) {
+        console.error('Failed to fetch logs:', e);
+      }
+    }
+
+    function setFilterLevel(level) {
+      currentFilterLevel = level;
+      
+      const btnError = document.getElementById('btnLevelError');
+      const btnWarning = document.getElementById('btnLevelWarning');
+      const btnAll = document.getElementById('btnLevelAll');
+      const btnFailed = document.getElementById('btnLevelFailed');
+
+      const activeClass = 'px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white shadow-md transition-all flex items-center gap-1.5';
+      const inactiveClass = 'px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition-all flex items-center gap-1.5';
+
+      btnError.className = level === 'ERROR' ? activeClass : inactiveClass;
+      btnWarning.className = level === 'WARNING' ? activeClass : inactiveClass;
+      btnAll.className = level === 'ALL' ? activeClass : inactiveClass;
+      btnFailed.className = level === 'FAILED' ? activeClass : inactiveClass;
+
+      fetchLogs();
+    }
+
+    function renderTerminalLogs() {
+      const terminal = document.getElementById('terminalBody');
+      const searchKeyword = document.getElementById('logSearchInput').value.toLowerCase().trim();
+
+      if (currentFilterLevel === 'FAILED') {
+        if (!failedVideosList || failedVideosList.length === 0) {
+          terminal.innerHTML = '<div class="text-emerald-400">🟢 Tidak ada video gagal (Semua video sukses atau belum ada data).</div>';
+          return;
+        }
+
+        let html = '';
+        failedVideosList.forEach((fv, idx) => {
+          if (searchKeyword && !JSON.stringify(fv).toLowerCase().includes(searchKeyword)) return;
+          html += `
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-rose-500/20 mb-3 space-y-1">
+              <div class="flex items-center justify-between text-rose-400 font-bold">
+                <span>[${idx + 1}] Video ID: ${escapeHtml(fv.video_id)}</span>
+                <span class="text-[10px] text-slate-400">${escapeHtml(fv.processed_at || '')}</span>
+              </div>
+              <div class="text-slate-300 text-xs">${escapeHtml(fv.title || 'Untitled Video')}</div>
+              <div class="text-rose-300 text-xs font-mono bg-black/40 p-2 rounded border border-rose-900/50 mt-1 whitespace-pre-wrap">ERROR: ${escapeHtml(fv.error_message || 'Unknown Error')}</div>
+            </div>
+          `;
+        });
+        terminal.innerHTML = html || '<div class="text-slate-500 italic">Tidak ada video failed yang cocok dengan pencarian.</div>';
+        return;
+      }
+
+      if (!rawLogLines || rawLogLines.length === 0) {
+        terminal.innerHTML = '<div class="text-slate-500 italic">Tidak ada data log yang ditemukan.</div>';
+        return;
+      }
+
+      let html = '';
+      rawLogLines.forEach(line => {
+        if (searchKeyword && !line.toLowerCase().includes(searchKeyword)) return;
+
+        let colorClass = 'text-slate-300';
+        if (line.includes('ERROR') || line.includes('CRITICAL') || line.includes('Failed') || line.includes('Exception')) {
+          colorClass = 'text-rose-400 font-semibold';
+        } else if (line.includes('WARNING')) {
+          colorClass = 'text-amber-300';
+        } else if (line.includes('SUCCESS') || line.includes('COMPLETED') || line.includes('🎉')) {
+          colorClass = 'text-emerald-400 font-semibold';
+        } else if (line.includes('INFO')) {
+          colorClass = 'text-blue-300';
+        }
+
+        html += `<div class="${colorClass} hover:bg-slate-900/50 px-1 py-0.5 rounded transition-colors whitespace-pre-wrap break-all">${escapeHtml(line)}</div>`;
+      });
+
+      terminal.innerHTML = html || '<div class="text-slate-500 italic">Tidak ada log yang cocok dengan kata kunci pencarian.</div>';
+    }
+
+    function filterLogsLocally() {
+      renderTerminalLogs();
+    }
+
+    async function clearServerLogs() {
+      if (!confirm('Apakah Anda yakin ingin membersihkan seluruh file log di server?')) return;
+      try {
+        const res = await fetch('/api/admin/clear-logs', { method: 'POST' });
+        if (res.ok) {
+          showToast('File log server berhasil dibersihkan', 'success');
+          fetchLogs();
+        } else {
+          showToast('Gagal membersihkan log', 'error');
+        }
+      } catch (e) {
+        showToast('Error koneksi server', 'error');
+      }
+    }
+
+    function copyTerminalText() {
+      const terminal = document.getElementById('terminalBody');
+      const text = terminal.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Log berhasil di-copy ke clipboard!', 'success');
+      });
+    }
+
+    function scrollToTerminalBottom() {
+      const terminal = document.getElementById('terminalBody');
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-indigo-600';
+      const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+
+      toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0`;
+      toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span>${message}</span>`;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
