@@ -270,16 +270,58 @@ class YouTubeFetcher:
         try:
             video_id, video_path = _execute_download(ydl_opts)
         except Exception as primary_err:
-            logger.warning("Primary video download failed (%s). Retrying without cookies...", str(primary_err))
-            ydl_opts.pop("cookiefile", None)
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
-            video_id, video_path = _execute_download(ydl_opts)
+            logger.warning("Primary video download failed (%s). Attempting direct FFmpeg HTTPS stream download...", str(primary_err))
+            try:
+                ydl_opts_stream = {
+                    "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best",
+                    "nocheckcertificate": True,
+                    "quiet": True
+                }
+                with yt_dlp.YoutubeDL(ydl_opts_stream) as ydl:
+                    info = ydl.extract_info(youtube_url, download=False)
+                    v_id = info.get("id", "stream_video")
+                    v_path = os.path.join(TEMP_DIR, f"{v_id}_video.mp4")
+
+                    stream_url = info.get("url")
+                    if not stream_url and "requested_formats" in info:
+                        stream_url = info["requested_formats"][0].get("url")
+
+                    if not stream_url:
+                        raise RuntimeError("Could not extract direct video stream URL")
+
+                    if start_sec is not None and end_sec is not None:
+                        duration = max(5.0, end_sec - start_sec)
+                        ffmpeg_cmd = [
+                            "ffmpeg", "-y",
+                            "-ss", f"{start_sec:.2f}",
+                            "-t", f"{duration:.2f}",
+                            "-i", stream_url,
+                            "-c:v", "libx264",
+                            "-preset", "fast",
+                            "-crf", "18",
+                            "-c:a", "aac",
+                            v_path
+                        ]
+                    else:
+                        ffmpeg_cmd = [
+                            "ffmpeg", "-y",
+                            "-i", stream_url,
+                            "-c", "copy",
+                            v_path
+                        ]
+
+                    subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+                    video_path = v_path
+            except Exception as stream_err:
+                logger.error("Direct FFmpeg video stream download also failed: %s", str(stream_err))
+                raise primary_err
 
         if not os.path.exists(video_path) or os.path.getsize(video_path) < 100000:
             raise FileNotFoundError(f"Downloaded video stream missing or truncated (<100KB): {video_path}")
 
         logger.info("Video stream ready (%d MB): %s", os.path.getsize(video_path) // (1024 * 1024), video_path)
         return video_path
+
 
 
 
