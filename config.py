@@ -68,13 +68,19 @@ YOUTUBE_COOKIES_FILE: Path = TOKENS_DIR / "youtube_cookies.txt"
 AFFILIATE_COMMENT_TEXT: str = os.getenv("AFFILIATE_COMMENT_TEXT", "").strip()
 
 # Auto-decode token secrets if passed via environment (supports 4 separate accounts)
+def _get_env_secret(primary_key: str, fallback_key: str) -> str:
+    val = os.getenv(primary_key, "").strip()
+    if val:
+        return val
+    return os.getenv(fallback_key, "").strip()
+
 raw_yt_b64 = (
-    os.getenv("YOUTUBE_TOKEN_BASE64") or 
-    (os.getenv("YOUTUBE_TOKEN_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("YOUTUBE_TOKEN_INDO_BASE64"))
+    _get_env_secret("YOUTUBE_TOKEN_INDO_BASE64", "YOUTUBE_TOKEN_BASE64") if TARGET_LANGUAGE == "id" 
+    else _get_env_secret("YOUTUBE_TOKEN_GLOBAL_BASE64", "YOUTUBE_TOKEN_BASE64")
 )
 if raw_yt_b64:
     try:
-        clean_b64 = raw_yt_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        clean_b64 = raw_yt_b64.replace("\r", "").replace("\n", "").replace(" ", "")
         decoded = base64.b64decode(clean_b64)
         with open(YOUTUBE_TOKEN_FILE, "wb") as f:
             f.write(decoded)
@@ -83,12 +89,12 @@ if raw_yt_b64:
         print(f"[config] Failed to decode YouTube token Base64: {e}")
 
 raw_tt_b64 = (
-    os.getenv("TIKTOK_COOKIES_BASE64") or 
-    (os.getenv("TIKTOK_COOKIES_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("TIKTOK_COOKIES_INDO_BASE64"))
+    _get_env_secret("TIKTOK_COOKIES_INDO_BASE64", "TIKTOK_COOKIES_BASE64") if TARGET_LANGUAGE == "id" 
+    else _get_env_secret("TIKTOK_COOKIES_GLOBAL_BASE64", "TIKTOK_COOKIES_BASE64")
 )
 if raw_tt_b64:
     try:
-        clean_b64 = raw_tt_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        clean_b64 = raw_tt_b64.replace("\r", "").replace("\n", "").replace(" ", "")
         decoded = base64.b64decode(clean_b64)
         with open(TIKTOK_COOKIES_FILE, "wb") as f:
             f.write(decoded)
@@ -97,12 +103,12 @@ if raw_tt_b64:
         print(f"[config] Failed to decode TikTok cookies Base64: {e}")
 
 raw_ytcookies_b64 = (
-    os.getenv("YOUTUBE_COOKIES_BASE64") or 
-    (os.getenv("YOUTUBE_COOKIES_GLOBAL_BASE64") if TARGET_LANGUAGE == "en" else os.getenv("YOUTUBE_COOKIES_INDO_BASE64"))
+    _get_env_secret("YOUTUBE_COOKIES_INDO_BASE64", "YOUTUBE_COOKIES_BASE64") if TARGET_LANGUAGE == "id" 
+    else _get_env_secret("YOUTUBE_COOKIES_GLOBAL_BASE64", "YOUTUBE_COOKIES_BASE64")
 )
 if raw_ytcookies_b64:
     try:
-        clean_b64 = raw_ytcookies_b64.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+        clean_b64 = raw_ytcookies_b64.replace("\r", "").replace("\n", "").replace(" ", "")
         decoded = base64.b64decode(clean_b64)
         with open(YOUTUBE_COOKIES_FILE, "wb") as f:
             f.write(decoded)
