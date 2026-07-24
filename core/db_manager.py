@@ -38,10 +38,11 @@ def init_db() -> None:
 
 def is_processed(video_id: str) -> bool:
     """
-    Checks if a video has already been processed or is currently processing.
+    Checks if a video has already been completed successfully.
     
     Returns:
-        bool: True if video_id exists with status 'COMPLETED' or 'PROCESSING'.
+        bool: True ONLY if video_id exists with status 'COMPLETED'.
+              Returns False for 'FAILED' or 'PROCESSING' so candidate videos can be retried cleanly.
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -51,8 +52,7 @@ def is_processed(video_id: str) -> bool:
         )
         row = cursor.fetchone()
         if row:
-            status = row["status"]
-            return status in ("COMPLETED", "PROCESSING")
+            return row["status"] == "COMPLETED"
         return False
 
 

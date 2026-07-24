@@ -54,7 +54,7 @@ RETRY_DELAY_SEC: int = int(os.getenv("RETRY_DELAY_SEC", "60"))
 
 # Target YouTube Sources / Feed Settings
 SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", "https://www.youtube.com/@HubermanLab/videos")
-MAX_FEED_ITEMS: int = int(os.getenv("MAX_FEED_ITEMS", "5"))
+MAX_FEED_ITEMS: int = int(os.getenv("MAX_FEED_ITEMS", "25"))
 
 import base64
 
