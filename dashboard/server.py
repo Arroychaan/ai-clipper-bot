@@ -30,8 +30,12 @@ from core.db_manager import (
     get_clip_by_id,
     update_clip_status,
     delete_clip_db,
-    get_dashboard_stats
+    get_dashboard_stats,
+    get_setting,
+    set_setting
 )
+from pydantic import BaseModel
+
 
 app = FastAPI(title="AI Clipper Bot PWA Dashboard", version="2.0.0")
 
@@ -134,9 +138,31 @@ def api_delete_clip(clip_id: str):
     return {"message": "Clip deleted successfully", "clip_id": clip_id}
 
 
+class ModePayload(BaseModel):
+    mode: str
+
+
+@app.get("/api/mode")
+def api_get_mode():
+    """Gets current active mode setting ('PODCAST' or 'WINDAH')."""
+    active_mode = get_setting("active_mode", "PODCAST")
+    return {"mode": active_mode}
+
+
+@app.post("/api/mode")
+def api_set_mode(payload: ModePayload):
+    """Sets active mode setting ('PODCAST' or 'WINDAH')."""
+    target_mode = payload.mode.upper().strip()
+    if target_mode not in ("PODCAST", "WINDAH"):
+        raise HTTPException(status_code=400, detail="Invalid mode. Must be 'PODCAST' or 'WINDAH'")
+    set_setting("active_mode", target_mode)
+    return {"status": "success", "mode": target_mode}
+
+
 def run_dashboard():
     """Entry point for launching the dashboard server."""
     uvicorn.run("dashboard.server:app", host=DASHBOARD_HOST, port=DASHBOARD_PORT, reload=False)
+
 
 
 if __name__ == "__main__":

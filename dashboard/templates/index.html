@@ -99,8 +99,20 @@
         </div>
       </div>
 
-      <!-- Action Buttons -->
+      <!-- Action Buttons & Mode Switcher -->
       <div class="flex items-center space-x-2">
+        <!-- MODE TOGGLE SWITCHER -->
+        <div class="flex items-center space-x-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-inner">
+          <button id="modePodcastBtn" onclick="switchBotMode('PODCAST')" class="px-3 py-1 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1">
+            <i class="fa-solid fa-podcast text-indigo-200"></i>
+            <span>Podcast</span>
+          </button>
+          <button id="modeWindahBtn" onclick="switchBotMode('WINDAH')" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1">
+            <i class="fa-solid fa-gamepad text-purple-400"></i>
+            <span>Windah</span>
+          </button>
+        </div>
+
         <button id="pwaInstallBtn" onclick="installPWA()" class="hidden px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all">
           <i class="fa-solid fa-download"></i>
           <span>Install App</span>
@@ -111,6 +123,7 @@
       </div>
     </div>
   </nav>
+
 
   <!-- MAIN CONTAINER -->
   <main class="max-w-7xl mx-auto px-4 pt-6 flex-1 w-full space-y-6">
@@ -231,9 +244,57 @@
       }
     }
 
+    async function loadBotMode() {
+      try {
+        const res = await fetch('/api/mode');
+        if (res.ok) {
+          const data = await res.json();
+          updateModeUI(data.mode);
+        }
+      } catch (e) {
+        console.error('Failed to load bot mode:', e);
+      }
+    }
+
+    function updateModeUI(activeMode) {
+      const pBtn = document.getElementById('modePodcastBtn');
+      const wBtn = document.getElementById('modeWindahBtn');
+      if (!pBtn || !wBtn) return;
+      if (activeMode === 'WINDAH') {
+        wBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-purple-600 text-white shadow-md flex items-center gap-1 ring-2 ring-purple-500/50';
+        pBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+      } else {
+        pBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1 ring-2 ring-indigo-500/50';
+        wBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+      }
+    }
+
+    async function switchBotMode(targetMode) {
+      try {
+        const res = await fetch('/api/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: targetMode })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          updateModeUI(data.mode);
+          showToast(
+            data.mode === 'WINDAH'
+              ? '🎮 Bot Aktif: Mode Windah Gaming (Split-Screen 24/7)'
+              : '🎙️ Bot Aktif: Mode Podcast (Raditya Dika, HAS Creative, Agak Laen)',
+            'success'
+          );
+        }
+      } catch (e) {
+        showToast('Gagal mengubah mode bot', 'error');
+      }
+    }
+
     // Fetch Stats & Clips
     async function loadDashboard() {
       try {
+        loadBotMode();
         const statsRes = await fetch('/api/stats');
         if (statsRes.ok) {
           const stats = await statsRes.json();
@@ -253,6 +314,7 @@
         showToast('Gagal memuat data dari server', 'error');
       }
     }
+
 
     function setFilter(filter) {
       currentFilter = filter;

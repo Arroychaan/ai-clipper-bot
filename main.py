@@ -23,12 +23,13 @@ from config import (
     SOURCE_FEED_URL,
     GAMING_MODE
 )
-from core.db_manager import init_db, is_processed, mark_status, save_clip
+from core.db_manager import init_db, is_processed, mark_status, save_clip, get_setting
 from core.groq_manager import ResilientGroqClient
 from core.fetcher import YouTubeFetcher
 from core.audio_processor import calibrate_cut_timestamps, generate_ass_subtitle_file, generate_subtitle_file
 from core.ffmpeg_renderer import render_vertical_shorts, render_gaming_split_shorts
 from core.facecam_detector import detect_streamer_facecam
+
 
 
 # Configure production logger
@@ -62,7 +63,8 @@ def cleanup_temp_workspace() -> None:
 
 def process_single_video(
     video_item: Dict[str, str],
-    groq_client: ResilientGroqClient
+    groq_client: ResilientGroqClient,
+    force_gaming_mode: bool = False
 ) -> bool:
     """
     Executes the clipping pipeline for a single YouTube video.
@@ -73,7 +75,7 @@ def process_single_video(
     video_title = video_item.get("title", "YouTube Video")
     
     logger.info("==================================================")
-    logger.info("Starting clipping engine for video ID: %s", video_id)
+    logger.info("Processing Candidate Video: %s (%s)", video_title, video_url)
     logger.info("==================================================")
 
     # 1. Update DB state to PROCESSING
@@ -150,16 +152,8 @@ def process_single_video(
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
-        # Check if Gaming Split-Screen Mode should be used
-        is_gaming_video = False
-        if GAMING_MODE in ("true", "1", "yes"):
-            is_gaming_video = True
-        elif GAMING_MODE == "auto":
-            gaming_keywords = ["windah", "basudara", "game", "gaming", "roblox", "mobile legend", "gta", "minecraft", "valorant", "ff", "free fire", "horror"]
-            is_gaming_video = any(k in video_title.lower() for k in gaming_keywords) or any(k in SOURCE_FEED_URL.lower() for k in gaming_keywords)
-
-        if is_gaming_video:
-            logger.info("🎮 [STEP 7/7] Gaming Split-Screen Mode Detected! Running AI Facecam Tracker -> %s...", output_clip_path)
+        if force_gaming_mode:
+            logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Running AI OpenCV Facecam Tracker -> %s...", output_clip_path)
             facecam_coords = detect_streamer_facecam(video_path)
             render_success = render_gaming_split_shorts(
                 input_video=video_path,
@@ -170,7 +164,7 @@ def process_single_video(
                 subtitle_path=sub_path
             )
         else:
-            logger.info("👉 [STEP 7/7] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
+            logger.info("🎙️ [PODCAST MODE ACTIVE] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
             render_success = render_vertical_shorts(
                 input_video=video_path,
                 start_time=start_sec,
@@ -223,8 +217,19 @@ def main_loop() -> None:
 
     while True:
         try:
-            logger.info("Checking video feed from: %s", SOURCE_FEED_URL)
-            videos = YouTubeFetcher.get_latest_videos(SOURCE_FEED_URL)
+            # Dynamically read active mode setting from SQLite ('PODCAST' or 'WINDAH')
+            active_mode = get_setting("active_mode", "PODCAST").upper().strip()
+            
+            if active_mode == "WINDAH":
+                feed_url = "https://www.youtube.com/@windahbasudara/videos"
+                force_gaming = True
+                logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Fetching feed: %s", feed_url)
+            else:
+                feed_url = "https://www.youtube.com/@radityadika/videos,https://www.youtube.com/@HASCreative/videos,https://www.youtube.com/@agaklaenofficial/videos"
+                force_gaming = False
+                logger.info("🎙️ [PODCAST MODE ACTIVE] Fetching feeds: %s", feed_url)
+
+            videos = YouTubeFetcher.get_latest_videos(feed_url)
 
             processed_any = False
             failed_attempts = 0
@@ -235,7 +240,8 @@ def main_loop() -> None:
                     continue
 
                 logger.info("Found unprocessed candidate video ID: %s ('%s')", v_id, item.get("title"))
-                success = process_single_video(item, groq_client)
+                success = process_single_video(item, groq_client, force_gaming_mode=force_gaming)
+
                 
                 if success:
                     processed_any = True

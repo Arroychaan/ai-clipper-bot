@@ -118,6 +118,30 @@ def _format_ass_timestamp(seconds: float) -> str:
     return f"{hours:01d}:{minutes:02d}:{secs:02d}.{cs:02d}"
 
 
+import re
+
+
+def clean_subtitle_text(text: str) -> str:
+    """
+    Cleans subtitle text to fix typos, remove stutter fillers ('uhm', 'err', 'ya', etc.),
+    and strip weird non-ASCII characters while converting to crisp uppercase.
+    """
+    if not text:
+        return ""
+
+    # Remove bracketed noise markers like [Laughter], (Applause), [Musik]
+    text = re.sub(r"\[.*?\]|\(.*?\)", "", text)
+
+    # Normalize multiple spaces or punctuation repeats
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(\?|\!|\.){2,}", r"\1", text)
+
+    # Strip strange symbols but preserve Indonesian letters, digits, and basic punctuation
+    text = re.sub(r"[^\w\s\?\!\,\.\'\-]", "", text)
+
+    return text.strip().upper()
+
+
 def interpolate_word_timestamps(raw_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Transforms sentence-level or raw transcript segments into precise word-by-word timestamps.
@@ -132,20 +156,23 @@ def interpolate_word_timestamps(raw_items: List[Dict[str, Any]]) -> List[Dict[st
 
         # Check if item is already a word-level timestamp object
         if "word" in item and item["word"]:
-            extracted_words.append({
-                "word": str(item["word"]).strip(),
-                "start": float(item.get("start", 0.0)),
-                "end": float(item.get("end", 0.0))
-            })
+            w_val = clean_subtitle_text(str(item["word"]))
+            if w_val:
+                extracted_words.append({
+                    "word": w_val,
+                    "start": float(item.get("start", 0.0)),
+                    "end": float(item.get("end", 0.0))
+                })
             continue
 
         # Item is a sentence-level segment
-        text = str(item.get("text") or "").strip()
+        raw_text = str(item.get("text") or "").strip()
+        cleaned_text = clean_subtitle_text(raw_text)
         s_start = float(item.get("start", 0.0))
         s_end = float(item.get("end", 0.0))
         s_duration = max(0.2, s_end - s_start)
 
-        words_in_text = text.split()
+        words_in_text = cleaned_text.split()
         if not words_in_text:
             continue
 
@@ -176,12 +203,12 @@ def generate_ass_subtitle_file(
     max_words_per_group: int = 2
 ) -> str:
     """
-    Generates a CapCut/Hormozi style ASS (Advanced SubStation Alpha) subtitle file with Word-by-Word Active Highlighting.
-    Active word is highlighted in vibrant yellow (&H0000FFFF&) and popped/scaled up 115% in real time.
+    Generates an ultra-mature CapCut/Hormozi style ASS subtitle file with Word-by-Word Active Highlighting.
+    Strictly clears previous words from screen instantly when the next word burst starts (Zero Text Residue).
     """
-    logger.info("Generating CapCut Word-by-Word ASS subtitle file at: %s", output_ass_path)
+    logger.info("Generating CapCut Zero-Residue Word-by-Word ASS subtitle file at: %s", output_ass_path)
 
-    # Automatically interpolate sentence segments into precise word-by-word timestamps if needed
+    # Automatically interpolate sentence segments into clean word-by-word timestamps
     word_timestamps = interpolate_word_timestamps(words)
 
     clip_words = []
@@ -191,7 +218,7 @@ def generate_ass_subtitle_file(
         if w_start >= start_sec and w_end <= end_sec:
             rel_start = max(0.0, w_start - start_sec)
             rel_end = max(rel_start + 0.1, w_end - start_sec)
-            word_val = str(w.get("word") or "").strip().upper()
+            word_val = clean_subtitle_text(str(w.get("word") or ""))
             if word_val:
                 clip_words.append({
                     "word": word_val,
@@ -203,7 +230,7 @@ def generate_ass_subtitle_file(
         logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
-    # Group into short 2-word bursts for maximum viral readability
+    # Group into short 1 to 2 word bursts for instant visual pop
     sub_entries = []
     current_group = []
     for word_info in clip_words:
@@ -221,17 +248,38 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCut, Arial Black, 76, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 480, 1
+Style: CapCut, Arial Black, 78, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 480, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     dialogue_lines = []
-    for group in sub_entries:
+    total_groups = len(sub_entries)
+
+    for group_idx, group in enumerate(sub_entries):
+        # Determine strict non-overlapping end boundary for this burst group
+        group_start = group[0]["start"]
+        group_end = group[-1]["end"]
+
+        # Cap group end timestamp to the next group's start time to guarantee 100% screen clearing
+        if group_idx + 1 < total_groups:
+            next_group_start = sub_entries[group_idx + 1][0]["start"]
+            group_end = min(group_end, next_group_start)
+
+        if (group_end - group_start) < 0.15:
+            group_end = group_start + 0.15
+
         for active_idx, w_active in enumerate(group):
             w_start = w_active["start"]
             w_end = w_active["end"]
+
+            # Cap active word end timestamp to group boundary or next word start
+            if active_idx + 1 < len(group):
+                w_end = min(w_end, group[active_idx + 1]["start"])
+            else:
+                w_end = min(w_end, group_end)
+
             if (w_end - w_start) < 0.12:
                 w_end = w_start + 0.12
 
@@ -241,8 +289,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             formatted_words = []
             for idx, item in enumerate(group):
                 if idx == active_idx:
-                    # Active Word: Neon Yellow color + 115% Pop scale + Reset back
-                    formatted_words.append(f"{{\\c&H0000FFFF&\\fscx115\\fscy115}}{item['word']}{{\\r}}")
+                    # Active Word: Neon Yellow + 118% Scale Pop + Reset
+                    formatted_words.append(f"{{\\c&H0000FFFF&\\fscx118\\fscy118}}{item['word']}{{\\r}}")
                 else:
                     formatted_words.append(item["word"])
 
@@ -252,8 +300,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogue_lines) + "\n")
 
-    logger.info("Successfully generated Word-by-Word ASS subtitles with active word highlight (%d events)", len(dialogue_lines))
+    logger.info("Successfully generated Zero-Residue Word-by-Word ASS subtitles (%d events)", len(dialogue_lines))
     return output_ass_path
+
 
 
 

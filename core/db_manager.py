@@ -72,12 +72,43 @@ def init_db() -> None:
             );
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
+        # Ensure default active_mode setting is initialized
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_mode', 'PODCAST')")
         conn.commit()
     logger.info("SQLite database initialized at: %s", DB_PATH)
     try:
         purge_invalid_clips()
     except Exception as e:
         logger.warning("Failed to run purge_invalid_clips: %s", str(e))
+
+
+def get_setting(key: str, default_value: str = "") -> str:
+    """Retrieves a setting value by key from SQLite settings table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        if row:
+            return row["value"]
+    return default_value
+
+
+def set_setting(key: str, value: str) -> None:
+    """Sets/updates a setting key-value pair in SQLite settings table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+    logger.info("Updated setting '%s' -> '%s'", key, value)
+
 
 
 
