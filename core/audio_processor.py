@@ -200,15 +200,14 @@ def generate_ass_subtitle_file(
     start_sec: float,
     end_sec: float,
     output_ass_path: str,
-    max_words_per_group: int = 3
+    max_words_per_group: int = 1
 ) -> str:
     """
-    Generates World-Class OpusClip / Wayin.ai / CapCut Style Dynamic Subtitles.
-    Displays 3-4 word readable phrases on screen with real-time active word karaoke 
-    highlighting in Neon Yellow (&H0000FFFF&) and 120% font pop scale, while non-active 
-    words stay in crisp White with a 5px thick black outline & drop shadow.
+    Generates Ultra-Clean 1-Word Per Screen (Single-Word Pop) Subtitles.
+    Displays exactly 1 word on screen at a time in Neon Yellow (&H0000FFFF&) + 125% pop scale.
+    Clears screen 100% instantly during silence/breath pauses (gap >= 0.20s).
     """
-    logger.info("Generating World-Class OpusClip Style ASS Subtitles: %s", output_ass_path)
+    logger.info("Generating Ultra-Clean 1-Word Single Pop ASS Subtitles: %s", output_ass_path)
 
     # Automatically interpolate sentence segments into clean word-by-word timestamps
     word_timestamps = interpolate_word_timestamps(words)
@@ -219,7 +218,7 @@ def generate_ass_subtitle_file(
         w_end = float(w.get("end", 0.0))
         if w_start >= start_sec and w_end <= end_sec:
             rel_start = max(0.0, w_start - start_sec)
-            rel_end = max(rel_start + 0.1, w_end - start_sec)
+            rel_end = max(rel_start + 0.08, w_end - start_sec)
             word_val = clean_subtitle_text(str(w.get("word") or ""))
             if word_val:
                 clip_words.append({
@@ -232,34 +231,6 @@ def generate_ass_subtitle_file(
         logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
-    # Group words into natural phrase clusters based on:
-    # 1. Silence pauses (>= 0.30s gap = speaker took a breath or paused) -> IMMEDIATE PHRASE CUT & CLEAR SCREEN
-    # 2. Punctuation marks (,, ., !, ?, ;, :) -> IMMEDIATE PHRASE CUT
-    # 3. Maximum 3-4 words or 22 characters per phrase
-    phrase_groups = []
-    current_phrase = []
-    current_char_len = 0
-
-    for w in clip_words:
-        if current_phrase:
-            prev_word_end = current_phrase[-1]["end"]
-            curr_word_start = w["start"]
-            silence_gap = curr_word_start - prev_word_end
-            prev_text = current_phrase[-1]["word"]
-            has_punctuation = any(p in prev_text for p in [",", ".", "!", "?", ";", ":"])
-
-            if silence_gap >= 0.30 or has_punctuation or len(current_phrase) >= 4 or current_char_len >= 22:
-                phrase_groups.append(current_phrase)
-                current_phrase = []
-                current_char_len = 0
-
-        current_phrase.append(w)
-        current_char_len += len(w["word"])
-
-    if current_phrase:
-        phrase_groups.append(current_phrase)
-
-
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -267,53 +238,47 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCut, Liberation Sans, 78, &H00FFFFFF, &H0000FFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 460, 1
+Style: CapCut, Liberation Sans, 84, &H0000FFFF, &H00FFFFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 6, 4, 2, 40, 40, 480, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     dialogue_lines = []
+    total_words = len(clip_words)
 
-    for group_idx, phrase in enumerate(phrase_groups):
-        phrase_word_count = len(phrase)
-        for w_idx, active_item in enumerate(phrase):
-            w_start = active_item["start"]
-            
-            # Determine end timestamp of active word event
-            if w_idx + 1 < phrase_word_count:
-                w_end = phrase[w_idx + 1]["start"]
+    for idx, w in enumerate(clip_words):
+        w_start = w["start"]
+        w_end = w["end"]
+        word_text = w["word"]
+
+        # Cap word end time to start of next word so words never overlap
+        if idx + 1 < total_words:
+            next_start = clip_words[idx + 1]["start"]
+            silence_gap = next_start - w_end
+            if silence_gap < 0.20:
+                w_end = next_start
             else:
-                w_end = active_item["end"]
-                # If next phrase group exists, cap to start of next phrase group
-                if group_idx + 1 < len(phrase_groups):
-                    next_phrase_start = phrase_groups[group_idx + 1][0]["start"]
-                    if next_phrase_start > w_start:
-                        w_end = min(w_end, next_phrase_start)
+                # Silence gap >= 0.20s (breath pause): clear screen during silence!
+                w_end = min(w_end, next_start - 0.05)
 
-            if (w_end - w_start) < 0.08:
-                w_end = w_start + 0.08
+        if (w_end - w_start) < 0.08:
+            w_end = w_start + 0.08
 
-            start_ts = _format_ass_timestamp(w_start)
-            end_ts = _format_ass_timestamp(w_end)
+        start_ts = _format_ass_timestamp(w_start)
+        end_ts = _format_ass_timestamp(w_end)
 
-            # Build phrase string where active word has Neon Yellow color (&H0000FFFF&) + 120% pop scale
-            formatted_words = []
-            for idx, item in enumerate(phrase):
-                w_text = item["word"]
-                if idx == w_idx:
-                    formatted_words.append(f"{{\\c&H0000FFFF&\\fscx120\\fscy120}}{w_text}{{\\r}}")
-                else:
-                    formatted_words.append(w_text)
+        # Single word pop: Neon Yellow (&H0000FFFF&) + 125% Pop Scale
+        line_text = f"{{\\c&H0000FFFF&\\fscx125\\fscy125}}{word_text}{{\\r}}"
+        dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{line_text}")
 
-            line_text = " ".join(formatted_words)
-            dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{line_text}")
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogue_lines) + "\n")
 
-    logger.info("Successfully generated OpusClip Style ASS subtitles (%d phrase events)", len(dialogue_lines))
+    logger.info("Successfully generated 1-Word Single Pop ASS Subtitles (%d events)", len(dialogue_lines))
     return output_ass_path
+
 
 
 
