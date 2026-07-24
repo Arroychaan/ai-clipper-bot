@@ -194,20 +194,21 @@ def interpolate_word_timestamps(raw_items: List[Dict[str, Any]]) -> List[Dict[st
 
     return extracted_words
 
-
 def generate_ass_subtitle_file(
     words: List[Dict[str, Any]],
     start_sec: float,
     end_sec: float,
     output_ass_path: str,
-    max_words_per_group: int = 1
+    max_words_per_group: int = 2
 ) -> str:
     """
-    Generates Ultra-Clean 1-Word Per Screen (Single-Word Pop) Subtitles.
-    Displays exactly 1 word on screen at a time in Neon Yellow (&H0000FFFF&) + 125% pop scale.
-    Clears screen 100% instantly during silence/breath pauses (gap >= 0.20s).
+    Generates TikTok / Reels Master Auto-FYP Formula Subtitles.
+    Pillars:
+    1. Timing & Pacing (0-Delay Waveform Rule, 1-2 Words per frame group, Silence Auto-Clear).
+    2. Active Word Highlighting (Neon Yellow &H003BEEFF& + 115% Zoom Pop, Passive Crisp White).
+    3. Safe Zone Alignment (Dead-Center Horizontal, Safe Bottom Vertical MarginV: 480).
     """
-    logger.info("Generating Ultra-Clean 1-Word Single Pop ASS Subtitles: %s", output_ass_path)
+    logger.info("Generating Master Auto-FYP Karaoke ASS Subtitles: %s", output_ass_path)
 
     # Automatically interpolate sentence segments into clean word-by-word timestamps
     word_timestamps = interpolate_word_timestamps(words)
@@ -231,6 +232,28 @@ def generate_ass_subtitle_file(
         logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
         return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
 
+    # Group words into 1-2 words max per frame group (or max 14 chars) for ultra-dynamic pacing
+    phrase_groups = []
+    current_phrase = []
+
+    for w in clip_words:
+        if current_phrase:
+            prev_end = current_phrase[-1]["end"]
+            curr_start = w["start"]
+            silence_gap = curr_start - prev_end
+            prev_word = current_phrase[-1]["word"]
+            has_punct = any(p in prev_word for p in [",", ".", "!", "?", ";", ":"])
+            curr_chars = sum(len(x["word"]) for x in current_phrase)
+
+            if silence_gap >= 0.18 or has_punct or len(current_phrase) >= 2 or curr_chars >= 14:
+                phrase_groups.append(current_phrase)
+                current_phrase = []
+
+        current_phrase.append(w)
+
+    if current_phrase:
+        phrase_groups.append(current_phrase)
+
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -238,46 +261,53 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCut, Liberation Sans, 84, &H0000FFFF, &H00FFFFFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 6, 4, 2, 40, 40, 480, 1
+Style: TikTokFYP, Liberation Sans, 84, &H00FFFFFF, &H003BEEFF, &H00000000, &H80000000, -1, 0, 0, 0, 100, 100, 0, 0, 1, 5, 3, 2, 40, 40, 480, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     dialogue_lines = []
-    total_words = len(clip_words)
-
-    for idx, w in enumerate(clip_words):
-        w_start = w["start"]
-        w_end = w["end"]
-        word_text = w["word"]
-
-        # Cap word end time to start of next word so words never overlap
-        if idx + 1 < total_words:
-            next_start = clip_words[idx + 1]["start"]
-            silence_gap = next_start - w_end
-            if silence_gap < 0.20:
-                w_end = next_start
+    for group_idx, phrase in enumerate(phrase_groups):
+        phrase_word_count = len(phrase)
+        for w_idx, active_item in enumerate(phrase):
+            # Apply 0-delay waveform offset (-0.05s) to align in-point precisely with audio onset
+            w_start = max(0.0, active_item["start"] - 0.05)
+            
+            if w_idx + 1 < phrase_word_count:
+                w_end = max(w_start + 0.08, phrase[w_idx + 1]["start"] - 0.05)
             else:
-                # Silence gap >= 0.20s (breath pause): clear screen during silence!
-                w_end = min(w_end, next_start - 0.05)
+                w_end = active_item["end"]
+                if group_idx + 1 < len(phrase_groups):
+                    next_start = phrase_groups[group_idx + 1][0]["start"] - 0.05
+                    if next_start > w_start:
+                        w_end = min(w_end, next_start)
 
-        if (w_end - w_start) < 0.08:
-            w_end = w_start + 0.08
+            if (w_end - w_start) < 0.08:
+                w_end = w_start + 0.08
 
-        start_ts = _format_ass_timestamp(w_start)
-        end_ts = _format_ass_timestamp(w_end)
+            start_ts = _format_ass_timestamp(w_start)
+            end_ts = _format_ass_timestamp(w_end)
 
-        # Single word pop: Neon Yellow (&H0000FFFF&) + 125% Pop Scale
-        line_text = f"{{\\c&H0000FFFF&\\fscx125\\fscy125}}{word_text}{{\\r}}"
-        dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},CapCut,,0,0,0,,{line_text}")
+            # Active Word: Neon Yellow (&H003BEEFF&) + 115% Zoom Pop
+            # Passive Word: Crisp White (&H00FFFFFF&)
+            formatted = []
+            for idx, item in enumerate(phrase):
+                text_val = item["word"]
+                if idx == w_idx:
+                    formatted.append(f"{{\\c&H003BEEFF&\\fscx115\\fscy115}}{text_val}{{\\r}}")
+                else:
+                    formatted.append(text_val)
 
+            line_str = " ".join(formatted)
+            dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},TikTokFYP,,0,0,0,,{line_str}")
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogue_lines) + "\n")
 
-    logger.info("Successfully generated 1-Word Single Pop ASS Subtitles (%d events)", len(dialogue_lines))
+    logger.info("Successfully generated Master Auto-FYP Karaoke ASS Subtitles (%d events)", len(dialogue_lines))
     return output_ass_path
+th
 
 
 
