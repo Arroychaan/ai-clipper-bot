@@ -184,8 +184,8 @@ class YouTubeFetcher:
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
 
-        ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
+        ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web", "mweb", "android"]}}
 
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
         try:
@@ -194,13 +194,14 @@ class YouTubeFetcher:
                 video_id = info.get("id", "")
                 audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
         except Exception as primary_err:
-            logger.warning("Primary audio download failed (%s). Retrying without cookies via Android client...", str(primary_err))
+            logger.warning("Primary audio download failed (%s). Retrying via mweb client...", str(primary_err))
             ydl_opts.pop("cookiefile", None)
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "android"]}}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(youtube_url, download=True)
                 video_id = info.get("id", "")
                 audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
+
             
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Expected audio file missing after download: {audio_path}")

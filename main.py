@@ -100,8 +100,10 @@ def process_single_video(
                 logger.info("👉 [STEP 3/7] Transcribing audio via Groq Whisper Large v3...")
                 transcript_data = groq_client.transcribe_audio(audio_path)
             except Exception as audio_err:
-                logger.warning("Audio download/transcription failed for candidate '%s': %s. Skipping...", video_id, str(audio_err))
+                logger.warning("Audio download/transcription failed for candidate '%s': %s. Marking FAILED and skipping...", video_id, str(audio_err))
+                mark_status(video_id, "FAILED", error_message=str(audio_err))
                 return False
+
         else:
             logger.info("👉 [STEP 3/7] Direct transcript retrieved instantly!")
 
