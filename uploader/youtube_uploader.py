@@ -59,16 +59,17 @@ class YouTubeUploader:
                     creds = None
 
             if not creds:
-                if not os.path.exists(YOUTUBE_CLIENT_SECRETS_FILE):
-                    logger.warning(
-                        "YouTube client secrets file not found at '%s'. YouTube uploading will be skipped.",
-                        YOUTUBE_CLIENT_SECRETS_FILE
-                    )
+                if os.getenv("GITHUB_ACTIONS") or not os.path.exists(YOUTUBE_CLIENT_SECRETS_FILE):
+                    logger.warning("YouTube OAuth2 credentials missing or unauthenticated in CI. Skipping YouTube upload.")
                     return None
 
-                logger.info("Initiating local server OAuth2 authorization flow...")
-                flow = InstalledAppFlow.from_client_secrets_file(str(YOUTUBE_CLIENT_SECRETS_FILE), SCOPES)
-                creds = flow.run_local_server(port=0)
+                try:
+                    logger.info("Initiating local server OAuth2 authorization flow...")
+                    flow = InstalledAppFlow.from_client_secrets_file(str(YOUTUBE_CLIENT_SECRETS_FILE), SCOPES)
+                    creds = flow.run_local_server(port=0)
+                except Exception as flow_err:
+                    logger.error("OAuth2 local server flow failed: %s", str(flow_err))
+                    return None
 
             # Save credentials for future executions
             with open(YOUTUBE_TOKEN_FILE, "w", encoding="utf-8") as token_file:

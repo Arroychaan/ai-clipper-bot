@@ -52,6 +52,7 @@ jobs:
           YOUTUBE_COOKIES_BASE64: ${{ secrets.YOUTUBE_COOKIES_GLOBAL_BASE64 || secrets.YOUTUBE_COOKIES_BASE64 }}
           TARGET_LANGUAGE: "en"
           RAMPUP_MODE: "true"
+          SINGLE_RUN: "true"
         run: |
           python main.py
 

@@ -53,6 +53,7 @@ jobs:
           AFFILIATE_COMMENT_TEXT: ${{ secrets.AFFILIATE_COMMENT_TEXT }}
           TARGET_LANGUAGE: "id"
           RAMPUP_MODE: "true"
+          SINGLE_RUN: "true"
         run: |
           python main.py
 

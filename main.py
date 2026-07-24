@@ -216,8 +216,8 @@ def main_loop() -> None:
                 if success:
                     processed_any = True
                     logger.info("Cycle success.")
-                    if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
-                        logger.info("SINGLE_RUN mode active. Exiting process after successful run.")
+                    if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
+                        logger.info("SINGLE_RUN / CI mode active. Exiting process after successful run.")
                         return
                     logger.info("Sleeping for %d seconds before next upload...", sleep_interval)
                     time.sleep(sleep_interval)
@@ -228,8 +228,8 @@ def main_loop() -> None:
 
             if not processed_any:
                 logger.info("No new unprocessed videos found in feed.")
-                if os.getenv("SINGLE_RUN", "false").lower() in ("true", "1", "yes"):
-                    logger.info("SINGLE_RUN mode active. Exiting cleanly.")
+                if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
+                    logger.info("SINGLE_RUN / CI mode active. Exiting cleanly.")
                     return
                 logger.info("Sleeping for %d seconds...", RETRY_DELAY_SEC * 5)
                 time.sleep(RETRY_DELAY_SEC * 5)
