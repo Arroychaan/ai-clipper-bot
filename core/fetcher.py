@@ -211,9 +211,7 @@ class YouTubeFetcher:
     @staticmethod
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
-        Downloads high quality video stream (up to 1080p MP4).
-        If start_sec and end_sec are provided, attempts fast clip slice download first,
-        falling back to full stream download if range requests fail.
+        Downloads high quality video stream (up to 1080p MP4) for accurate FFmpeg seeking.
         """
         output_template = os.path.join(TEMP_DIR, "%(id)s_video.%(ext)s")
 
@@ -232,18 +230,6 @@ class YouTubeFetcher:
         ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
 
-        # Attempt range slice download first if timestamps provided
-        if start_sec is not None and end_sec is not None:
-            pad_start = max(0.0, start_sec - 3.0)
-            pad_end = end_sec + 3.0
-            try:
-                import yt_dlp.utils
-                ydl_opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(pad_start, pad_end)])
-                ydl_opts["force_keyframes_at_cuts"] = True
-                logger.info("Downloading 1080p clip slice (%.2fs - %.2fs) for: %s", pad_start, pad_end, youtube_url)
-            except Exception as e:
-                logger.warning("Range download setup warning: %s", str(e))
-
         def _execute_download(opts: dict) -> Tuple[str, str]:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(youtube_url, download=True)
@@ -257,25 +243,20 @@ class YouTubeFetcher:
                             break
                 return v_id, v_path
 
+        logger.info("Downloading 1080p video stream for FFmpeg precision rendering: %s", youtube_url)
         try:
             video_id, video_path = _execute_download(ydl_opts)
         except Exception as primary_err:
-            logger.warning("Primary video download failed (%s). Retrying full stream without cookies...", str(primary_err))
+            logger.warning("Primary video download failed (%s). Retrying without cookies...", str(primary_err))
             ydl_opts.pop("cookiefile", None)
-            ydl_opts.pop("download_ranges", None)
             ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
             video_id, video_path = _execute_download(ydl_opts)
 
-        # Verification: If file missing or corrupted (< 100KB due to range download block), retry full stream
         if not os.path.exists(video_path) or os.path.getsize(video_path) < 100000:
-            logger.warning("Downloaded video file is missing or truncated (size < 100KB). Retrying full video stream download...")
-            ydl_opts.pop("download_ranges", None)
-            video_id, video_path = _execute_download(ydl_opts)
+            raise FileNotFoundError(f"Downloaded video stream missing or truncated (<100KB): {video_path}")
 
-        if not os.path.exists(video_path) or os.path.getsize(video_path) < 100000:
-            raise FileNotFoundError(f"Downloaded video stream missing or truncated: {video_path}")
-
-        logger.info("Video stream ready (%d KB): %s", os.path.getsize(video_path) // 1024, video_path)
+        logger.info("Video stream ready (%d MB): %s", os.path.getsize(video_path) // (1024 * 1024), video_path)
         return video_path
+
 
 
