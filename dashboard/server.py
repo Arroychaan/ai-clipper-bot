@@ -98,7 +98,45 @@ def get_clip_file(filename: str):
     return FileResponse(file_path, media_type="video/mp4", filename=filename)
 
 
+class CustomUrlPayload(BaseModel):
+    url: str
+
+@app.post("/api/clip-url")
+def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundTasks):
+    """Triggers instant processing for a specific YouTube VOD link (Wayin.ai style)."""
+    raw_url = payload.url.strip()
+    v_id = None
+    if "v=" in raw_url:
+        v_id = raw_url.split("v=")[1].split("&")[0]
+    elif "youtu.be/" in raw_url:
+        v_id = raw_url.split("youtu.be/")[1].split("?")[0]
+    
+    if not v_id:
+        raise HTTPException(status_code=400, detail="Link YouTube tidak valid. Harap gunakan format link YouTube yang benar.")
+
+    clean_url = f"https://www.youtube.com/watch?v={v_id}"
+    
+    from core.db_manager import add_candidate_video
+    add_candidate_video(v_id, f"Custom VOD ({v_id})", clean_url, "custom")
+
+    def _run_clip():
+        try:
+            from main import process_single_video
+            from core.groq_manager import ResilientGroqClient
+            from core.db_manager import get_setting
+            groq_client = ResilientGroqClient()
+            active_mode = get_setting("active_mode", "PODCAST")
+            item = {"video_id": v_id, "title": f"Custom VOD ({v_id})", "url": clean_url}
+            process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
+        except Exception as e:
+            print(f"[error] Custom URL clip background processing failed: {e}")
+
+    background_tasks.add_task(_run_clip)
+    return {"message": f"Link YouTube ID '{v_id}' berhasil masuk antrean klip instan!", "video_id": v_id}
+
+
 # --- REST API ENDPOINTS ---
+
 
 @app.get("/api/stats")
 def api_get_stats():

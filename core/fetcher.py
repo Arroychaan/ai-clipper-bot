@@ -154,32 +154,27 @@ class YouTubeFetcher:
         """
         output_template = os.path.join(TEMP_DIR, "%(id)s_audio.%(ext)s")
         ydl_opts = {
-            "format": "bestaudio/best",
+            "format": "ba/b/best",
             "outtmpl": output_template,
             "nocheckcertificate": True,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "wav",
                 "preferredquality": "192",
-            }, {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
             }],
             "postprocessor_args": [
-                "-ar", "16000",  # 16kHz sample rate for Whisper
-                "-ac", "1",      # Mono channel
+                "-ar", "16000",
+                "-ac", "1",
             ],
             "quiet": True,
             "overwrites": True
         }
 
-        # Inject YouTube cookies and mobile/Android player client for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
 
         ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web_creator", "android_vr", "android", "ios"]}}
 
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
         try:
@@ -191,7 +186,7 @@ class YouTubeFetcher:
             logger.warning("Primary audio download hit bot check (%s). Extracting direct stream URL via FFmpeg...", str(primary_err))
             try:
                 ydl_opts_stream = {
-                    "format": "bestaudio[ext=m4a]/bestaudio/best",
+                    "format": "b/best",
                     "nocheckcertificate": True,
                     "quiet": True
                 }
@@ -221,9 +216,6 @@ class YouTubeFetcher:
                 logger.error("Direct FFmpeg stream extraction also failed: %s", str(stream_err))
                 raise primary_err
 
-
-
-            
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Expected audio file missing after download: {audio_path}")
 
@@ -238,18 +230,6 @@ class YouTubeFetcher:
         output_template = os.path.join(TEMP_DIR, "%(id)s_video.%(ext)s")
 
         ydl_opts = {
-            "format": "best[height<=1080][ext=mp4]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best",
-            "outtmpl": output_template,
-            "nocheckcertificate": True,
-            "quiet": True,
-            "overwrites": True
-        }
-
-        cookies_path = str(YOUTUBE_COOKIES_FILE)
-        if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
-            ydl_opts["cookiefile"] = cookies_path
-
-        ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web_creator", "android_vr", "android", "ios"]}}
 
 
