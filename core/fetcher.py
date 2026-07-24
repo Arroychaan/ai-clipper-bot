@@ -225,15 +225,15 @@ class YouTubeFetcher:
             "overwrites": True
         }
 
-        # Inject YouTube cookies for datacenter bot bypass
+        # Inject YouTube cookies and mobile/Android player client for datacenter bot bypass
         cookies_path = str(YOUTUBE_COOKIES_FILE)
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
             ydl_opts["user_agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web", "tv"]}}
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb", "web"]}}
         else:
             ydl_opts["user_agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "web"]}}
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios", "mweb"]}}
 
         if start_sec is not None and end_sec is not None:
             # Buffer 3s before and after to ensure clean FFmpeg keyframe trimming

@@ -204,6 +204,7 @@ def main_loop() -> None:
             videos = YouTubeFetcher.get_latest_videos(SOURCE_FEED_URL)
 
             processed_any = False
+            failed_attempts = 0
             for item in videos:
                 v_id = item["id"]
                 if is_processed(v_id):
@@ -223,7 +224,13 @@ def main_loop() -> None:
                     time.sleep(sleep_interval)
                     break  # Process 1 video per cycle interval
                 else:
-                    logger.warning("Video processing failed for candidate '%s'. Trying next candidate in feed...", v_id)
+                    failed_attempts += 1
+                    logger.warning("Video processing failed for candidate '%s' (Attempt %d/3).", v_id, failed_attempts)
+                    if failed_attempts >= 3:
+                        logger.warning("Reached maximum candidate retry limit (3 attempts). Exiting cycle cleanly.")
+                        if os.getenv("SINGLE_RUN", "true" if os.getenv("GITHUB_ACTIONS") else "false").lower() in ("true", "1", "yes"):
+                            return
+                        break
                     continue
 
             if not processed_any:
