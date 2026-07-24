@@ -81,45 +81,39 @@ class YouTubeFetcher:
         """
         Fetches official YouTube transcript directly via youtube_transcript_api
         in 0.05 seconds without any bot checks or audio downloads!
-        Supports both v1.2+ (fetch) and v0.6+ (get_transcript/list) API signatures.
         """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
             
             transcript_list = None
-            # 1. Try v1.2+ API (YouTubeTranscriptApi().fetch)
+            
+            # 1. Prioritize list() / list_transcripts() to fetch any available language track (id, en, auto-generated)
             try:
                 ytt = YouTubeTranscriptApi()
-                if hasattr(ytt, 'fetch'):
-                    try:
-                        transcript_list = ytt.fetch(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
-                    except Exception:
-                        transcript_list = ytt.fetch(video_id)
-            except Exception:
-                pass
+                list_func = getattr(ytt, 'list', None) or getattr(ytt, 'list_transcripts', None) or getattr(YouTubeTranscriptApi, 'list', None) or getattr(YouTubeTranscriptApi, 'list_transcripts', None)
+                if list_func:
+                    transcripts = list_func(video_id)
+                    t_obj = next(iter(transcripts), None)
+                    if t_obj:
+                        transcript_list = t_obj.fetch()
+            except Exception as e_list:
+                logger.debug("Transcript list fetch attempt for %s: %s", video_id, str(e_list))
 
-            # 2. Try v0.6+ static API (YouTubeTranscriptApi.get_transcript)
-            if transcript_list is None and hasattr(YouTubeTranscriptApi, 'get_transcript'):
-                try:
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
-                except Exception:
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-
-            # 3. Try listing transcripts
+            # 2. Fallback to fetch() or get_transcript() with Indonesian / English language list
             if transcript_list is None:
                 try:
-                    list_func = getattr(YouTubeTranscriptApi, 'list', None) or getattr(YouTubeTranscriptApi, 'list_transcripts', None)
-                    if list_func:
-                        transcripts = list_func(video_id)
-                        t_obj = next(iter(transcripts), None)
-                        if t_obj:
-                            transcript_list = t_obj.fetch()
-                except Exception:
-                    pass
+                    ytt = YouTubeTranscriptApi()
+                    if hasattr(ytt, 'fetch'):
+                        transcript_list = ytt.fetch(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
+                    elif hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
+                except Exception as e_fetch:
+                    logger.debug("Transcript direct fetch attempt for %s: %s", video_id, str(e_fetch))
 
             if not transcript_list:
                 logger.warning("No transcript snippets retrieved for video %s", video_id)
                 return None
+
 
             full_text_parts = []
             segments = []
