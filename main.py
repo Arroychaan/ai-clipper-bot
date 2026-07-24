@@ -142,15 +142,39 @@ def process_single_video(
         logger.info("👉 [STEP 6/7] Downloading MP4 video stream section...")
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
-        # Generate CapCut-style ASS subtitles
+        # Extract audio slice from downloaded video_path for Groq Whisper v3 precision word timestamps
+        logger.info("👉 [STEP 5.5/7] Extracting clip audio slice for Groq Whisper v3 0-delay word timestamps...")
+        clip_audio_path = os.path.join(TEMP_DIR, f"{video_id}_clip_audio.wav")
+        clip_words = []
+        try:
+            cmd_cut_audio = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                clip_audio_path
+            ]
+            subprocess.run(cmd_cut_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            
+            logger.info("Running Groq Whisper Large v3 on clip audio slice (%s)...", clip_audio_path)
+            clip_transcription = groq_client.transcribe_audio(clip_audio_path)
+            clip_words = clip_transcription.get("words", [])
+            logger.info("Groq Whisper Large v3 extracted %d precise waveform words for clip!", len(clip_words))
+        except Exception as whisper_err:
+            logger.warning("Clip audio Whisper transcription failed (%s). Falling back to segment interpolation...", str(whisper_err))
+
+        # Generate CapCut/TikTok Master Auto-FYP ASS subtitles with 0-delay waveform timestamps
         ass_filename = f"{video_id}_subtitles.ass"
         sub_path = os.path.join(TEMP_DIR, ass_filename)
+        
+        # If clip_words came from clip_audio_path (which starts at 0.0s), timestamps are relative to 0.0s!
+        use_relative_zero = len(clip_words) > 0
         generate_ass_subtitle_file(
-            words=transcript_data.get("words") or transcript_data.get("segments", []),
-            start_sec=start_sec,
-            end_sec=end_sec,
+            words=clip_words if use_relative_zero else (transcript_data.get("words") or transcript_data.get("segments", [])),
+            start_sec=0.0 if use_relative_zero else start_sec,
+            end_sec=duration if use_relative_zero else end_sec,
             output_ass_path=sub_path
         )
+
 
         # 6. Render Full HD 9:16 vertical short using FFmpeg
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"

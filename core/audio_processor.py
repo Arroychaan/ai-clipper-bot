@@ -307,12 +307,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     logger.info("Successfully generated Master Auto-FYP Karaoke ASS Subtitles (%d events)", len(dialogue_lines))
     return output_ass_path
-th
 
 
-
-
-
+def _format_srt_timestamp(seconds: float) -> str:
+    """Helper to format seconds to SRT timestamp format (HH:MM:SS,mmm)"""
+    millis = int((seconds - int(seconds)) * 1000)
+    seconds = int(seconds)
+    minutes = seconds // 60
+    hours = minutes // 60
+    minutes %= 60
+    seconds %= 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
 def generate_subtitle_file(
