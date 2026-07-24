@@ -93,10 +93,14 @@ def process_single_video(
         
         audio_path = None
         if not transcript_data:
-            logger.info("Direct transcript unavailable. Downloading audio stream for Groq Whisper...")
-            _, audio_path = YouTubeFetcher.download_audio(video_url)
-            logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
-            transcript_data = groq_client.transcribe_audio(audio_path)
+            logger.info("Direct transcript unavailable. Attempting audio download for Groq Whisper...")
+            try:
+                _, audio_path = YouTubeFetcher.download_audio(video_url)
+                logger.info("👉 [STEP 3/9] Transcribing audio via Groq Whisper Large v3...")
+                transcript_data = groq_client.transcribe_audio(audio_path)
+            except Exception as audio_err:
+                logger.warning("Audio download/transcription failed for candidate '%s': %s. Skipping to next candidate...", video_id, str(audio_err))
+                return False
         else:
             logger.info("👉 [STEP 3/9] Direct transcript retrieved in 0.1s! Bypassing audio download.")
 
