@@ -212,14 +212,11 @@ class YouTubeFetcher:
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
         Downloads high quality video stream (up to 1080p MP4).
-    @staticmethod
-    def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
-        """
-        Downloads high quality video stream (up to 1080p MP4).
         If start_sec and end_sec are provided, attempts fast clip slice download first,
         falling back to full stream download if range requests fail.
         """
         output_template = os.path.join(TEMP_DIR, "%(id)s_video.%(ext)s")
+
         ydl_opts = {
             "format": "best[height<=1080][ext=mp4]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best",
             "outtmpl": output_template,

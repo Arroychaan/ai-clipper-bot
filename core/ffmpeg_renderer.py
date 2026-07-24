@@ -109,10 +109,34 @@ def render_vertical_shorts(
         logger.info("FFmpeg render completed successfully: %s", output_path)
         return True
     except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg render failed with exit code %d. Error output:\n%s",
-                     e.returncode, e.stderr[-1000:] if e.stderr else "")
-        return False
+        logger.warning("FFmpeg render with subtitles failed (%s). Retrying clean render without subtitles...",
+                       e.stderr[-300:] if e.stderr else "")
+        # Fallback filter complex without subtitles
+        filter_complex_fallback = f"{bg_filter}; f[0:v]scale={TARGET_WIDTH}:-1[fg]; {overlay_filter}".replace("f[0:v]", "[0:v]")
+        fallback_cmd = [
+            "ffmpeg", "-y",
+            "-ss", f"{start_time:.2f}",
+            "-t", f"{duration:.2f}",
+            "-i", input_video,
+            "-filter_complex", filter_complex_fallback,
+            "-map", "[outv]",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "19",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            output_path
+        ]
+        try:
+            subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            logger.info("Fallback FFmpeg render completed successfully: %s", output_path)
+            return True
+        except Exception as fallback_err:
+            logger.error("Fallback FFmpeg render also failed: %s", str(fallback_err))
+            return False
     except Exception as e:
         logger.error("Unexpected error during FFmpeg rendering: %s", str(e))
         return False
+
 
