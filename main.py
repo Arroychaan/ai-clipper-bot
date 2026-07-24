@@ -21,10 +21,12 @@ from config import (
     STANDARD_INTERVAL_SEC,
     RETRY_DELAY_SEC,
     SOURCE_FEED_URL,
-    GAMING_MODE
+    GAMING_MODE,
+    PODCAST_FEEDS
 )
-from core.db_manager import init_db, is_processed, mark_status, save_clip, get_setting
+from core.db_manager import init_db, is_processed, mark_status, save_clip, get_setting, get_unprocessed_custom_candidates
 from core.groq_manager import ResilientGroqClient
+
 from core.fetcher import YouTubeFetcher
 from core.audio_processor import calibrate_cut_timestamps, generate_ass_subtitle_file, generate_subtitle_file
 from core.ffmpeg_renderer import render_vertical_shorts, render_gaming_split_shorts
@@ -235,15 +237,15 @@ def main_loop() -> None:
                 last_mode = active_mode
 
             if active_mode == "WINDAH":
-                feed_url = "https://www.youtube.com/@windahbasudara/videos"
                 force_gaming = True
-                logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Fetching feed: %s", feed_url)
+                logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Mode 1 Auto-feed STOPPED. Checking for manual YouTube URL inputs...")
+                videos = get_unprocessed_custom_candidates()
             else:
-                feed_url = "https://www.youtube.com/@radityadika/videos,https://www.youtube.com/@HASCreative/videos,https://www.youtube.com/@agaklaenofficial/videos"
+                feed_url = ",".join(PODCAST_FEEDS)
                 force_gaming = False
-                logger.info("🎙️ [PODCAST MODE ACTIVE] Fetching feeds: %s", feed_url)
+                logger.info("🎙️ [PODCAST MODE ACTIVE] Fetching latest feeds from 9 Podcast channels...")
+                videos = YouTubeFetcher.get_latest_videos(feed_url)
 
-            videos = YouTubeFetcher.get_latest_videos(feed_url)
 
             processed_any = False
             failed_attempts = 0

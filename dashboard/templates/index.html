@@ -103,11 +103,11 @@
       <div class="flex items-center space-x-2">
         <!-- MODE TOGGLE SWITCHER -->
         <div class="flex items-center space-x-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-inner">
-          <button id="modePodcastBtn" onclick="switchBotMode('PODCAST')" class="px-3 py-1 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1">
+          <button id="modePodcastBtn" onclick="requestSwitchMode('PODCAST')" class="px-3 py-1 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1">
             <i class="fa-solid fa-podcast text-indigo-200"></i>
             <span>Podcast</span>
           </button>
-          <button id="modeWindahBtn" onclick="switchBotMode('WINDAH')" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1">
+          <button id="modeWindahBtn" onclick="requestSwitchMode('WINDAH')" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1">
             <i class="fa-solid fa-gamepad text-purple-400"></i>
             <span>Windah</span>
           </button>
@@ -117,13 +117,16 @@
             var cachedMode = localStorage.getItem('bot_mode') || 'PODCAST';
             var pBtn = document.getElementById('modePodcastBtn');
             var wBtn = document.getElementById('modeWindahBtn');
+            var urlBar = document.getElementById('customUrlBarContainer');
             if (pBtn && wBtn) {
               if (cachedMode === 'WINDAH') {
                 wBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-purple-600 text-white shadow-md flex items-center gap-1 ring-2 ring-purple-500/50';
                 pBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+                if (urlBar) urlBar.classList.remove('hidden');
               } else {
                 pBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1 ring-2 ring-indigo-500/50';
                 wBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+                if (urlBar) urlBar.classList.add('hidden');
               }
             }
           })();
@@ -140,25 +143,24 @@
     </div>
   </nav>
 
-
-
   <!-- MAIN CONTAINER -->
   <main class="max-w-7xl mx-auto px-4 pt-6 flex-1 w-full space-y-6">
 
-    <!-- WAYIN AI INSTANT YOUTUBE URL CLIPPER BAR -->
-    <div class="glass-card p-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-slate-900/60 shadow-xl">
+    <!-- WAYIN AI INSTANT YOUTUBE URL CLIPPER BAR (WINDAH GAMING MANUAL MODE ONLY) -->
+    <div id="customUrlBarContainer" class="hidden glass-card p-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-slate-900/60 shadow-xl">
       <div class="flex flex-col md:flex-row items-center gap-3">
         <div class="flex-1 w-full relative">
           <i class="fa-brands fa-youtube text-red-500 text-lg absolute left-3.5 top-1/2 -translate-y-1/2"></i>
-          <input type="text" id="customYoutubeUrl" placeholder="Tempel Link YouTube VOD / Windah Basudara (misal: https://www.youtube.com/watch?v=...)..." 
+          <input type="text" id="customYoutubeUrl" placeholder="Tempel Link YouTube VOD Windah Basudara (misal: https://www.youtube.com/watch?v=...)..." 
                  class="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition-all">
         </div>
         <button onclick="submitCustomUrlClip()" id="customUrlBtn" class="w-full md:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition-all shrink-0">
           <i class="fa-solid fa-bolt text-yellow-300"></i>
-          <span>⚡ Klip Instan Sekarang</span>
+          <span>⚡ Klip Instan Windah</span>
         </button>
       </div>
     </div>
+v>
 
     <!-- STATS SUMMARY CARDS -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -289,17 +291,44 @@
       }
     }
 
+    function requestSwitchMode(targetMode) {
+      const currentMode = localStorage.getItem('bot_mode') || 'PODCAST';
+      if (targetMode === currentMode) return;
+      
+      pendingTargetMode = targetMode;
+      const modalText = targetMode === 'WINDAH'
+        ? 'Mode Windah Gaming akan diaktifkan. Mode 1 Auto-Scan dihentikan. Anda dapat menempelkan link YouTube Windah Basudara secara manual pada formulir yang muncul.'
+        : 'Mode Podcast akan diaktifkan. Pemindaian otomatis 24/7 untuk 9 channel podcast akan dimulai secara otomatis.';
+      
+      document.getElementById('modeModalText').innerText = modalText;
+      document.getElementById('modeModal').classList.remove('hidden');
+    }
+
+    function closeModeModal() {
+      pendingTargetMode = null;
+      document.getElementById('modeModal').classList.add('hidden');
+    }
+
+    async function proceedSwitchMode() {
+      if (!pendingTargetMode) return;
+      const targetMode = pendingTargetMode;
+      closeModeModal();
+      await switchBotMode(targetMode);
+    }
+
     function updateModeUI(activeMode) {
       try { localStorage.setItem('bot_mode', activeMode); } catch(e){}
       const pBtn = document.getElementById('modePodcastBtn');
       const wBtn = document.getElementById('modeWindahBtn');
-      if (!pBtn || !wBtn) return;
+      const urlBar = document.getElementById('customUrlBarContainer');
       if (activeMode === 'WINDAH') {
-        wBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-purple-600 text-white shadow-md flex items-center gap-1 ring-2 ring-purple-500/50';
-        pBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+        if (wBtn) wBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-purple-600 text-white shadow-md flex items-center gap-1 ring-2 ring-purple-500/50';
+        if (pBtn) pBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+        if (urlBar) urlBar.classList.remove('hidden');
       } else {
-        pBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1 ring-2 ring-indigo-500/50';
-        wBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+        if (pBtn) pBtn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition-all bg-indigo-600 text-white shadow-md flex items-center gap-1 ring-2 ring-indigo-500/50';
+        if (wBtn) wBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1';
+        if (urlBar) urlBar.classList.add('hidden');
       }
     }
 
@@ -316,11 +345,16 @@
           updateModeUI(data.mode);
           showToast(
             data.mode === 'WINDAH'
-              ? '🎮 Bot Aktif: Mode Windah Gaming (Split-Screen 24/7)'
-              : '🎙️ Bot Aktif: Mode Podcast (Raditya Dika, HAS Creative, Agak Laen)',
+              ? '🎮 Bot Aktif: Mode Windah Gaming (Manual Input Link)'
+              : '🎙️ Bot Aktif: Mode Podcast Auto 24/7 (9 Channel)',
             'success'
           );
         }
+      } catch (e) {
+        showToast('Gagal mengubah mode bot', 'error');
+      }
+    }
+
     async function submitCustomUrlClip() {
       const inputEl = document.getElementById('customYoutubeUrl');
       const btnEl = document.getElementById('customUrlBtn');
@@ -598,5 +632,28 @@
     // Initial Load
     document.addEventListener('DOMContentLoaded', loadDashboard);
   </script>
+
+  <!-- MODE SWITCH CONFIRMATION MODAL -->
+  <div id="modeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-700 shadow-2xl space-y-4 text-center">
+      <div class="w-12 h-12 mx-auto rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-xl border border-purple-500/30">
+        <i id="modeModalIcon" class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-bold text-white">Konfirmasi Perubahan Mode</h3>
+        <p id="modeModalText" class="text-xs text-slate-300 mt-2 leading-relaxed">
+          Apakah Anda yakin ingin mengubah mode sakelar?
+        </p>
+      </div>
+      <div class="flex items-center justify-center space-x-3 pt-2">
+        <button onclick="closeModeModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all">
+          Batal
+        </button>
+        <button id="modeModalConfirmBtn" onclick="proceedSwitchMode()" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition-all">
+          Ya, Ubah Mode
+        </button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

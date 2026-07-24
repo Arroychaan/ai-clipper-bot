@@ -80,6 +80,17 @@ def init_db() -> None:
             );
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS candidate_videos (
+                video_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'custom',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
         # Ensure default active_mode setting is initialized
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_mode', 'PODCAST')")
         conn.commit()
@@ -88,6 +99,36 @@ def init_db() -> None:
         purge_invalid_clips()
     except Exception as e:
         logger.warning("Failed to run purge_invalid_clips: %s", str(e))
+
+
+def add_candidate_video(video_id: str, title: str, url: str, source: str = "custom") -> None:
+    """Inserts or replaces a candidate video in SQLite DB."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO candidate_videos (video_id, title, url, source) VALUES (?, ?, ?, ?)",
+            (video_id, title, url, source)
+        )
+        conn.commit()
+    logger.info("Added candidate video '%s' (%s) to DB", video_id, source)
+
+
+def get_unprocessed_custom_candidates() -> list[dict]:
+    """Retrieves list of custom candidate videos that are not completed or failed."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT c.video_id, c.title, c.url 
+            FROM candidate_videos c
+            LEFT JOIN processed_videos p ON c.video_id = p.video_id
+            WHERE p.video_id IS NULL OR p.status NOT IN ('COMPLETED', 'FAILED')
+            ORDER BY c.created_at ASC
+            """
+        )
+        rows = cursor.fetchall()
+        return [{"id": row["video_id"], "title": row["title"], "url": row["url"]} for row in rows]
+
 
 
 def get_setting(key: str, default_value: str = "") -> str:

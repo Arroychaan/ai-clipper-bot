@@ -66,8 +66,21 @@ STANDARD_INTERVAL_SEC: int = int(os.getenv("STANDARD_INTERVAL_SEC", "8640")) # ~
 RETRY_DELAY_SEC: int = int(os.getenv("RETRY_DELAY_SEC", "60"))
 
 # Target YouTube Sources / Feed Settings
-SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", "https://www.youtube.com/@DennySumargo/videos")
+PODCAST_FEEDS: list[str] = [
+    "https://www.youtube.com/@radityadika/videos",
+    "https://www.youtube.com/@tuah_kreasi/videos",
+    "https://www.youtube.com/@Rockaroma_ID/videos",
+    "https://www.youtube.com/@HASCreative/videos",
+    "https://www.youtube.com/@agaklaenofficial/videos",
+    "https://www.youtube.com/@gjlsentertainment6055/videos",
+    "https://www.youtube.com/@TirtaPengPengPeng/videos",
+    "https://www.youtube.com/@juanneve/videos",
+    "https://www.youtube.com/channel/UCp7hJfiiocdY085XnWVrp2Q/videos",
+]
+
+SOURCE_FEED_URL: str = os.getenv("SOURCE_FEED_URL", ",".join(PODCAST_FEEDS))
 MAX_FEED_ITEMS: int = int(os.getenv("MAX_FEED_ITEMS", "25"))
+
 
 import base64
 
