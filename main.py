@@ -217,14 +217,13 @@ def process_single_video(
                 save_clip(
                     clip_id=clip_id,
                     video_id=video_id,
-                    title=title,
-                    start_time=start_sec,
-                    end_time=end_sec,
-                    clip_path=clip_filename,
-                    status="READY",
-                    viral_score=v_score,
+                    video_title=video_url,
+                    clip_title=title,
                     caption=caption,
-                    hashtags=hashtags_str
+                    hashtags=hashtags_str,
+                    viral_score=v_score,
+                    duration=duration,
+                    clip_path=clip_filename
                 )
                 rendered_count += 1
                 add_system_log(video_id, "INFO", "[STEP 6/6]", f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil dibuat!")
