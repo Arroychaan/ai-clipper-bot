@@ -56,7 +56,7 @@ def render_vertical_shorts(
     # 4. Draw sleek glassmorphic neon divider accent line at center Y=956..960
     divider_filter = (
         "[stacked]drawbox=y=956:color=cyan@0.8:width=iw:height=8:t=fill,"
-        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill,fps=60[outv]"
+        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill,fps=30[outv]"
     )
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
@@ -70,14 +70,15 @@ def render_vertical_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "19",
+        "-preset", "superfast",
+        "-crf", "22",
+        "-threads", "0",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "128k",
         output_path
     ]
 
-    logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg 60fps render command...")
+    logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg superfast render command...")
 
     try:
         subprocess.run(
@@ -86,12 +87,12 @@ def render_vertical_shorts(
             stderr=subprocess.PIPE,
             text=True,
             check=True,
-            timeout=180
+            timeout=300
         )
         logger.info("FFmpeg 100% Full-Screen render completed successfully: %s", output_path)
         return True
     except subprocess.TimeoutExpired as te:
-        raise RuntimeError(f"FFmpeg Podcast Split-Screen render timed out after 180s: {output_path}") from te
+        raise RuntimeError(f"FFmpeg Podcast Split-Screen render timed out after 300s: {output_path}") from te
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-800:] if e.stderr else str(e)
         raise RuntimeError(f"FFmpeg Podcast Split-Screen render failed: {err_msg}") from e
@@ -153,7 +154,7 @@ def render_gaming_split_shorts(
             sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=900"
             final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
     else:
-        final_sub_filter = "[base]fps=60[outv]"
+        final_sub_filter = "[base]fps=30[outv]"
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
 
@@ -166,14 +167,15 @@ def render_gaming_split_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "19",
+        "-preset", "superfast",
+        "-crf", "22",
+        "-threads", "0",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "128k",
         output_path
     ]
 
-    logger.info("Executing Gaming Split-Screen 60fps render command...")
+    logger.info("Executing Gaming Split-Screen superfast render command...")
     try:
         subprocess.run(
             cmd,
@@ -181,12 +183,12 @@ def render_gaming_split_shorts(
             stderr=subprocess.PIPE,
             text=True,
             check=True,
-            timeout=180
+            timeout=300
         )
         logger.info("Gaming Split-Screen render completed successfully: %s", output_path)
         return True
     except subprocess.TimeoutExpired as te:
-        raise RuntimeError(f"FFmpeg Gaming Split-Screen render timed out after 180s: {output_path}") from te
+        raise RuntimeError(f"FFmpeg Gaming Split-Screen render timed out after 300s: {output_path}") from te
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback without subtitles...", err_msg)
@@ -200,10 +202,11 @@ def render_gaming_split_shorts(
             "-map", "[outv]",
             "-map", "0:a?",
             "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "19",
+            "-preset", "superfast",
+            "-crf", "22",
+            "-threads", "0",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "128k",
             output_path
         ]
         try:
@@ -213,7 +216,7 @@ def render_gaming_split_shorts(
                 stderr=subprocess.PIPE,
                 text=True,
                 check=True,
-                timeout=180
+                timeout=300
             )
             logger.info("Fallback Gaming Split-Screen render completed successfully: %s", output_path)
             return True
@@ -224,6 +227,7 @@ def render_gaming_split_shorts(
             raise RuntimeError(f"Fallback Gaming Split-Screen error: {str(fb_ex)}") from fb_ex
     except Exception as e:
         raise RuntimeError(f"Unexpected error during Gaming Split-Screen render: {str(e)}") from e
+
 
 
 
