@@ -13,10 +13,36 @@ from config import TARGET_WIDTH, TARGET_HEIGHT
 logger = logging.getLogger(__name__)
 
 
-def _escape_ffmpeg_path(path: str) -> str:
-    """Escapes backslashes and special chars in file paths for FFmpeg filtergraphs."""
-    escaped = path.replace("\\", "/").replace(":", "\\:")
-    return repr(escaped).strip("'")
+def _get_video_dimensions(video_path: str) -> tuple[int, int]:
+    """Gets exact (width, height) of a video file via OpenCV or ffprobe."""
+    try:
+        import cv2  # type: ignore
+        cap = cv2.VideoCapture(video_path)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+            cap.release()
+            if w > 0 and h > 0:
+                return w, h
+    except Exception:
+        pass
+
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=s=x:p=0",
+            video_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if res.returncode == 0 and "x" in res.stdout:
+            parts = res.stdout.strip().split("x")
+            return int(parts[0]), int(parts[1])
+    except Exception:
+        pass
+
+    return 1920, 1080
 
 
 def render_vertical_shorts(
@@ -126,18 +152,26 @@ def render_gaming_split_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
+    # Probe input video dimensions to guarantee 100% boundary-safe FFmpeg crop parameters
+    in_w, in_h = _get_video_dimensions(input_video)
+
     # Default facecam crop coordinates if not provided (Top-Left crop for Windah Basudara facecam)
     fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
-    cw = max(100, int(fc.get("crop_w", 640)))
-    ch = max(100, int(fc.get("crop_h", 480)))
-    cx = max(0, int(fc.get("crop_x", 0)))
-    cy = max(0, int(fc.get("crop_y", 0)))
+    raw_cw = max(100, int(fc.get("crop_w", 640)))
+    raw_ch = max(100, int(fc.get("crop_h", 480)))
+    raw_cx = max(0, int(fc.get("crop_x", 0)))
+    raw_cy = max(0, int(fc.get("crop_y", 0)))
 
-    # 1. TOP HALF (1080x960): Streamer Facecam cropped with 100% boundary-safe FFmpeg min/max expressions & scaled to 1080x960
-    top_filter = (
-        f"[0:v]crop=w='min(iw,{cw})':h='min(ih,{ch})':x='max(0,min(iw-w,{cx}))':y='max(0,min(ih-h,{cy}))',"
-        f"scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
-    )
+    # Clamp crop dimensions to input video boundaries (w <= in_w, h <= in_h, x+w <= in_w, y+h <= in_h)
+    cw = min(in_w, raw_cw)
+    ch = min(in_h, raw_ch)
+    cx = max(0, min(in_w - cw, raw_cx))
+    cy = max(0, min(in_h - ch, raw_cy))
+
+    logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d", in_w, in_h, cw, ch, cx, cy)
+
+    # 1. TOP HALF (1080x960): Streamer Facecam cropped & scaled to fill 1080x960
+    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
     # 2. BOTTOM HALF (1080x960): Main Gameplay Stream centered crop & scaled to fill 1080x960
     bottom_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
