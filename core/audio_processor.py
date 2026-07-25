@@ -288,7 +288,8 @@ def generate_ass_subtitle_file(
     for w in word_timestamps:
         w_start = float(w.get("start", 0.0))
         w_end = float(w.get("end", 0.0))
-        if w_start >= start_sec and w_end <= end_sec:
+        # Flexible range check with 0.5s margin to prevent missing words at boundaries
+        if (w_start >= start_sec - 0.5 and w_start <= end_sec + 0.5) or (start_sec == 0.0 and w_start <= end_sec + 1.0):
             rel_start = max(0.0, w_start - start_sec)
             rel_end = max(rel_start + 0.08, w_end - start_sec)
             word_val = clean_subtitle_text(str(w.get("word") or ""))
@@ -300,8 +301,16 @@ def generate_ass_subtitle_file(
                 })
 
     if not clip_words:
-        logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles.", start_sec, end_sec)
-        return generate_subtitle_file(words, start_sec, end_sec, output_ass_path.replace(".ass", ".srt"))
+        logger.warning("No words extracted in range %.2fs - %.2fs for ASS subtitles. Using all interpolated words...", start_sec, end_sec)
+        for w in word_timestamps:
+            word_val = clean_subtitle_text(str(w.get("word") or ""))
+            if word_val:
+                clip_words.append({
+                    "word": word_val,
+                    "start": float(w.get("start", 0.0)),
+                    "end": float(w.get("end", 0.0))
+                })
+
 
     # Group words into 1-2 words max per frame group (or max 14 chars) for ultra-dynamic pacing
     phrase_groups = []

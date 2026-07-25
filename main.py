@@ -143,17 +143,20 @@ def process_single_video(
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
         # Extract audio slice from downloaded video_path for Groq Whisper v3 precision word timestamps
-        logger.info("👉 [STEP 5.5/7] Extracting clip audio slice for Groq Whisper v3 0-delay word timestamps...")
+        logger.info("👉 [STEP 5.5/7] Extracting clip audio slice for Groq Whisper v3 0-delay word timestamps (Start: %.2fs, Duration: %.2fs)...", start_sec, duration)
         clip_audio_path = os.path.join(TEMP_DIR, f"{video_id}_clip_audio.wav")
         clip_words = []
         try:
             cmd_cut_audio = [
                 "ffmpeg", "-y",
+                "-ss", f"{start_sec:.2f}",
+                "-t", f"{duration:.2f}",
                 "-i", video_path,
                 "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
                 clip_audio_path
             ]
             subprocess.run(cmd_cut_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+
             
             logger.info("Running Groq Whisper Large v3 on clip audio slice (%s)...", clip_audio_path)
             clip_transcription = groq_client.transcribe_audio(clip_audio_path)
