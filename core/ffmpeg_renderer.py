@@ -90,15 +90,14 @@ def render_vertical_shorts(
         )
         logger.info("FFmpeg 100% Full-Screen render completed successfully: %s", output_path)
         return True
-    except subprocess.TimeoutExpired:
-        logger.error("FFmpeg render timed out after 180 seconds for: %s", output_path)
-        return False
+    except subprocess.TimeoutExpired as te:
+        raise RuntimeError(f"FFmpeg Podcast Split-Screen render timed out after 180s: {output_path}") from te
     except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg render failed with stderr: %s", e.stderr[-500:] if e.stderr else str(e))
-        return False
+        err_msg = e.stderr[-800:] if e.stderr else str(e)
+        raise RuntimeError(f"FFmpeg Podcast Split-Screen render failed: {err_msg}") from e
     except Exception as e:
-        logger.error("Unexpected error during FFmpeg rendering: %s", str(e))
-        return False
+        raise RuntimeError(f"Unexpected error during Podcast Split-Screen render: {str(e)}") from e
+
 
 
 
@@ -154,7 +153,7 @@ def render_gaming_split_shorts(
             sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=900"
             final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
     else:
-        final_sub_filter = "[base]null,fps=60[outv]"
+        final_sub_filter = "[base]fps=60[outv]"
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
 
@@ -186,12 +185,11 @@ def render_gaming_split_shorts(
         )
         logger.info("Gaming Split-Screen render completed successfully: %s", output_path)
         return True
-    except subprocess.TimeoutExpired:
-        logger.error("Gaming Split-Screen render timed out after 180 seconds!")
-        return False
+    except subprocess.TimeoutExpired as te:
+        raise RuntimeError(f"FFmpeg Gaming Split-Screen render timed out after 180s: {output_path}") from te
     except subprocess.CalledProcessError as e:
-        logger.warning("Gaming Split-Screen render with subtitles failed (%s). Retrying without subtitles...",
-                       e.stderr[-300:] if e.stderr else "")
+        err_msg = e.stderr[-600:] if e.stderr else str(e)
+        logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback without subtitles...", err_msg)
         filter_complex_fallback = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}".replace("[base]", "[outv]")
         fallback_cmd = [
             "ffmpeg", "-y",
@@ -219,12 +217,14 @@ def render_gaming_split_shorts(
             )
             logger.info("Fallback Gaming Split-Screen render completed successfully: %s", output_path)
             return True
-        except Exception as fallback_err:
-            logger.error("Fallback Gaming Split-Screen render also failed: %s", str(fallback_err))
-            return False
+        except subprocess.CalledProcessError as fallback_err:
+            fallback_msg = fallback_err.stderr[-800:] if fallback_err.stderr else str(fallback_err)
+            raise RuntimeError(f"FFmpeg Gaming Split-Screen render failed: {fallback_msg}") from fallback_err
+        except Exception as fb_ex:
+            raise RuntimeError(f"Fallback Gaming Split-Screen error: {str(fb_ex)}") from fb_ex
     except Exception as e:
-        logger.error("Unexpected error during Gaming Split-Screen rendering: %s", str(e))
-        return False
+        raise RuntimeError(f"Unexpected error during Gaming Split-Screen render: {str(e)}") from e
+
 
 
 
