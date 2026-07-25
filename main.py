@@ -175,9 +175,9 @@ def process_single_video(
             render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
 
             sub_ass_path = str(TEMP_DIR / f"{video_id}_sub_{clip_idx}.ass")
-            from core.audio_processor import generate_word_level_ass
+            from core.audio_processor import generate_ass_subtitle_file
             try:
-                generate_word_level_ass(
+                generate_ass_subtitle_file(
                     words=transcript_data.get("words", []),
                     start_sec=start_sec,
                     end_sec=end_sec,

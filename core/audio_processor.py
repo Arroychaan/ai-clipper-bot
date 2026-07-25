@@ -394,6 +394,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return output_ass_path
 
 
+# Alias for backward compatibility
+generate_word_level_ass = generate_ass_subtitle_file
+
+
 def _format_srt_timestamp(seconds: float) -> str:
     """Helper to format seconds to SRT timestamp format (HH:MM:SS,mmm)"""
     millis = int((seconds - int(seconds)) * 1000)
