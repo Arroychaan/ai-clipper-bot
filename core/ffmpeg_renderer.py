@@ -13,6 +13,12 @@ from config import TARGET_WIDTH, TARGET_HEIGHT
 logger = logging.getLogger(__name__)
 
 
+def _escape_ffmpeg_path(path: str) -> str:
+    """Escapes backslashes and special chars in file paths for FFmpeg filtergraphs."""
+    escaped = path.replace("\\", "/").replace(":", "\\:")
+    return repr(escaped).strip("'")
+
+
 def _get_video_dimensions(video_path: str) -> tuple[int, int]:
     """Gets exact (width, height) of a video file via OpenCV or ffprobe."""
     try:
@@ -82,10 +88,21 @@ def render_vertical_shorts(
     # 4. Draw sleek glassmorphic neon divider accent line at center Y=956..960
     divider_filter = (
         "[stacked]drawbox=y=956:color=cyan@0.8:width=iw:height=8:t=fill,"
-        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill,fps=30[outv]"
+        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill[base]"
     )
 
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
+    # 5. Burn-in Subtitles if provided
+    if subtitle_path and os.path.exists(subtitle_path):
+        escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
+        if subtitle_path.endswith(".ass"):
+            final_sub_filter = f"[base]ass='{escaped_sub_path}'[outv]"
+        else:
+            sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=900"
+            final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
+    else:
+        final_sub_filter = "[base]fps=30[outv]"
+
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
 
     cmd = [
         "ffmpeg", "-y",
