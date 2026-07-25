@@ -85,46 +85,42 @@ class YouTubeFetcher:
         return results
 
     @staticmethod
-    def get_transcript_direct(video_id: str) -> Optional[Dict[str, Any]]:
+    def fetch_transcript(video_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches official YouTube transcript directly via youtube_transcript_api
-        in 0.05 seconds without any bot checks or audio downloads!
+        in 0.2 seconds without any bot checks or audio downloads!
         """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
             
             transcript_list = None
+            ytt = YouTubeTranscriptApi()
             
-            # 1. Prioritize list() / list_transcripts() to fetch any available language track (id, en, auto-generated)
+            # 1. Primary fetch with clean ISO language codes (id, en, id-ID, en-US)
             try:
-                ytt = YouTubeTranscriptApi()
-                list_func = getattr(ytt, 'list', None) or getattr(ytt, 'list_transcripts', None) or getattr(YouTubeTranscriptApi, 'list', None) or getattr(YouTubeTranscriptApi, 'list_transcripts', None)
-                if list_func:
-                    transcripts = list_func(video_id)
-                    t_obj = next(iter(transcripts), None)
-                    if t_obj:
-                        transcript_list = t_obj.fetch()
-            except Exception as e_list:
-                logger.debug("Transcript list fetch attempt for %s: %s", video_id, str(e_list))
+                transcript_list = ytt.fetch(video_id, languages=['id', 'en', 'id-ID', 'en-US'])
+            except Exception as e_clean:
+                logger.debug("Primary clean language fetch attempt for %s: %s", video_id, str(e_clean))
 
-            # 2. Fallback to fetch() or get_transcript() with Indonesian / English language list
-            if transcript_list is None:
+            # 2. Fallback to list_transcripts / iterator to fetch any available auto-generated track
+            if not transcript_list:
                 try:
-                    ytt = YouTubeTranscriptApi()
-                    if hasattr(ytt, 'fetch'):
-                        transcript_list = ytt.fetch(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
-                    elif hasattr(YouTubeTranscriptApi, 'get_transcript'):
-                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en', 'en-US', 'a.id', 'a.en'])
-                except Exception as e_fetch:
-                    logger.debug("Transcript direct fetch attempt for %s: %s", video_id, str(e_fetch))
+                    list_func = getattr(ytt, 'list_transcripts', None) or getattr(YouTubeTranscriptApi, 'list_transcripts', None)
+                    if list_func:
+                        transcripts = list_func(video_id)
+                        t_obj = next(iter(transcripts), None)
+                        if t_obj:
+                            transcript_list = t_obj.fetch()
+                except Exception as e_list:
+                    logger.debug("Transcript list fetch attempt for %s: %s", video_id, str(e_list))
 
             if not transcript_list:
                 logger.warning("No transcript snippets retrieved for video %s", video_id)
                 return None
 
-
             full_text_parts = []
             segments = []
+            words = []
             for item in transcript_list:
                 if isinstance(item, dict):
                     t_text = item.get("text", "")
@@ -135,19 +131,36 @@ class YouTubeFetcher:
                     t_start = float(getattr(item, "start", 0.0))
                     t_dur = float(getattr(item, "duration", 0.0))
 
-                full_text_parts.append(t_text)
+                t_clean = t_text.strip()
+                if not t_clean:
+                    continue
+
+                full_text_parts.append(t_clean)
                 segments.append({
                     "start": t_start,
                     "end": t_start + t_dur,
-                    "text": t_text
+                    "text": t_clean
                 })
+                
+                # Split segment text into word-level timestamps for ASS karaoke engine
+                seg_words = t_clean.split()
+                if seg_words:
+                    w_dur = t_dur / len(seg_words)
+                    for w_i, w_str in enumerate(seg_words):
+                        words.append({
+                            "word": w_str,
+                            "start": round(t_start + (w_i * w_dur), 2),
+                            "end": round(t_start + ((w_i + 1) * w_dur), 2)
+                        })
 
             full_text = " ".join(full_text_parts)
-            logger.info("Successfully fetched direct YouTube transcript for video %s: %d segments", video_id, len(segments))
-            return {"text": full_text, "segments": segments}
+            logger.info("Successfully fetched direct YouTube transcript for video %s: %d segments, %d words",
+                        video_id, len(segments), len(words))
+            return {"text": full_text, "segments": segments, "words": words}
         except Exception as e:
             logger.warning("youtube_transcript_api direct fetch failed for %s: %s", video_id, str(e))
             return None
+
 
     @staticmethod
     def download_audio(youtube_url: str) -> Tuple[str, str]:

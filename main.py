@@ -99,8 +99,8 @@ def process_single_video(
         # 2. Get video transcript
         msg_trans = f"Mengambil transkrip/subtitel YouTube..."
         logger.info("👉 [STEP 2/6] %s", msg_trans)
-        add_system_log(video_id, "INFO", "[STEP 2/6]", msg_trans)
-        transcript_data = YouTubeFetcher.get_transcript_direct(video_id)
+        transcript_data = YouTubeFetcher.fetch_transcript(video_id)
+
         
         audio_path = None
         if not transcript_data:
