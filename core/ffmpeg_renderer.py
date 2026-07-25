@@ -45,10 +45,10 @@ def render_vertical_shorts(
         return False
 
     # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to fill 1080x960
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
     # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to fill 1080x960
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920 canvas)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -116,15 +116,15 @@ def render_gaming_split_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # Default facecam crop coordinates if not provided (Top-Left 640x480 crop for Windah Basudara)
-    fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
-    cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 0)
+    # Default facecam crop coordinates if not provided (Bottom-Left 640x480 crop for Windah Basudara)
+    fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 540}
+    cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 540)
 
     # 1. Top Stream (1080x960): Gameplay Stream scaled & cropped to 1080x960
-    top_filter = "[0:v]scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    top_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
-    # 2. Bottom Stream (1080x960): Streamer Facecam cropped from coordinates & scaled to 1080x960
-    bottom_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
+    # 2. Bottom Stream (1080x960): Streamer Facecam cropped from coordinates & scaled to fill 1080x960
+    bottom_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -145,6 +145,7 @@ def render_gaming_split_shorts(
             final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
     else:
         final_sub_filter = "[base]null,fps=60[outv]"
+
 
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
