@@ -115,8 +115,19 @@ def init_db() -> None:
         logger.warning("Failed to run purge_invalid_clips: %s", str(e))
 
 
+def reset_video_state(video_id: str) -> None:
+    """Deletes old processed_videos and system_logs for a video_id to retry cleanly."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM processed_videos WHERE video_id = ?", (video_id,))
+        cursor.execute("DELETE FROM system_logs WHERE video_id = ?", (video_id,))
+        conn.commit()
+    logger.info("Reset DB processing state and logs for video_id '%s'", video_id)
+
+
 def add_candidate_video(video_id: str, title: str, url: str, source: str = "custom") -> None:
     """Inserts or replaces a candidate video in SQLite DB."""
+    reset_video_state(video_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -125,6 +136,7 @@ def add_candidate_video(video_id: str, title: str, url: str, source: str = "cust
         )
         conn.commit()
     logger.info("Added candidate video '%s' (%s) to DB", video_id, source)
+
 
 
 def get_unprocessed_custom_candidates() -> list[dict]:

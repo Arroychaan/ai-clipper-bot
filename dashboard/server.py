@@ -123,8 +123,11 @@ def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundT
     clean_url = f"https://www.youtube.com/watch?v={v_id}"
 
     
-    from core.db_manager import add_candidate_video
+    from core.db_manager import add_candidate_video, reset_video_state, mark_status, add_system_log
+    reset_video_state(v_id)
     add_candidate_video(v_id, f"Custom VOD ({v_id})", clean_url, "custom")
+    mark_status(v_id, "PROCESSING")
+    add_system_log(v_id, "INFO", "[STEP 1/6]", f"Inisialisasi pemrosesan klip instan untuk video ID {v_id}")
 
     def _run_clip():
         try:
@@ -136,10 +139,15 @@ def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundT
             item = {"video_id": v_id, "title": f"Custom VOD ({v_id})", "url": clean_url}
             process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
         except Exception as e:
-            print(f"[error] Custom URL clip background processing failed: {e}")
+            import traceback
+            tb_str = traceback.format_exc()
+            print(f"[error] Custom URL clip background processing failed: {e}\n{tb_str}")
+            add_system_log(v_id, "ERROR", "FAILED", f"Background processing failed: {str(e)}", tb_str)
+            mark_status(v_id, "FAILED", error_message=f"{str(e)}\n\nTraceback:\n{tb_str}")
 
     background_tasks.add_task(_run_clip)
     return {"message": f"Link YouTube ID '{v_id}' berhasil masuk antrean klip instan!", "video_id": v_id}
+
 
 
 # --- REST API ENDPOINTS ---
