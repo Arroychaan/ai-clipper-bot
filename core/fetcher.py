@@ -233,87 +233,61 @@ class YouTubeFetcher:
     @staticmethod
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
-        Downloads ONLY the high-quality 1080p video stream slice (from start_sec to end_sec)
-        directly via FFmpeg HTTPS streaming.
-        This produces a small 10-20MB video slice in 3 seconds, eliminating 3GB downloads and FFmpeg seeking hangs!
+        Downloads high-quality 1080p video stream using yt-dlp section range downloader.
+        Downloads ONLY the required clip range (start_sec to end_sec) cleanly.
         """
         video_id = YouTubeFetcher.extract_video_id(youtube_url) or "custom"
         output_path = os.path.join(TEMP_DIR, f"{video_id}_video.mp4")
 
         ydl_opts = {
-            "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best",
+            "format": "b/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "outtmpl": output_path,
             "nocheckcertificate": True,
             "quiet": True,
+            "overwrites": True,
             "extractor_args": {"youtube": {"player_client": ["web_creator", "android_vr", "android", "ios"]}}
         }
+
+        if start_sec is not None and end_sec is not None:
+            ydl_opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(float(start_sec), float(end_sec))])
+            ydl_opts["force_keyframes_at_cuts"] = True
 
         cookies_path = str(YOUTUBE_COOKIES_FILE)
         if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
             ydl_opts["cookiefile"] = cookies_path
 
+        logger.info("Downloading 1080p video stream (Range: %s - %s) -> %s", start_sec, end_sec, output_path)
+
         try:
-            logger.info("Extracting direct 1080p stream URL for video slice (Start: %s, End: %s)...", start_sec, end_sec)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(youtube_url, download=False)
-                v_id = info.get("id", video_id)
-                output_path = os.path.join(TEMP_DIR, f"{v_id}_video.mp4")
-                
-                stream_url = info.get("url")
-                if not stream_url and "requested_formats" in info:
-                    stream_url = info["requested_formats"][0].get("url")
-
-                if not stream_url:
-                    # Fallback to yt-dlp download if direct stream URL missing
-                    ydl_opts_dl = ydl_opts.copy()
-                    ydl_opts_dl["outtmpl"] = os.path.join(TEMP_DIR, f"{v_id}_video.%(ext)s")
-                    ydl.download([youtube_url])
-                    return output_path
-
-                # Extract EXACT clip slice via FFmpeg (takes 3-5 seconds!)
-                if start_sec is not None and end_sec is not None:
-                    duration = max(5.0, float(end_sec) - float(start_sec))
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-ss", f"{float(start_sec):.2f}",
-                        "-t", f"{duration:.2f}",
-                        "-i", stream_url,
-                        "-c:v", "libx264",
-                        "-preset", "fast",
-                        "-crf", "18",
-                        "-c:a", "aac",
-                        output_path
-                    ]
-                else:
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-i", stream_url,
-                        "-c", "copy",
-                        output_path
-                    ]
-
-                logger.info("Downloading precision 30s video slice via FFmpeg...")
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True, timeout=120)
-                
+                ydl.download([youtube_url])
         except Exception as e:
-            logger.warning("Direct stream slice download hit check (%s). Falling back to full yt-dlp download...", str(e))
-            try:
-                ydl_opts_full = {
-                    "format": "b/best",
-                    "outtmpl": os.path.join(TEMP_DIR, f"{video_id}_video.%(ext)s"),
-                    "quiet": True
-                }
-                if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
-                    ydl_opts_full["cookiefile"] = cookies_path
-                with yt_dlp.YoutubeDL(ydl_opts_full) as ydl:
-                    ydl.download([youtube_url])
-            except Exception as dl_err:
-                logger.error("Full yt-dlp video download also failed: %s", str(dl_err))
+            logger.warning("Range download failed (%s). Retrying full video download...", str(e))
+            ydl_opts_fallback = {
+                "format": "b/best",
+                "outtmpl": output_path,
+                "quiet": True,
+                "overwrites": True
+            }
+            if os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 100:
+                ydl_opts_fallback["cookiefile"] = cookies_path
+            with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
+                ydl.download([youtube_url])
 
-        if not os.path.exists(output_path) or os.path.getsize(output_path) < 100000:
-            raise FileNotFoundError(f"Video stream slice download failed or truncated (<100KB): {output_path}")
+        # Verify downloaded file exists
+        if not os.path.exists(output_path):
+            for ext in ["mp4", "mkv", "webm"]:
+                alt_p = os.path.join(TEMP_DIR, f"{video_id}_video.{ext}")
+                if os.path.exists(alt_p):
+                    output_path = alt_p
+                    break
 
-        logger.info("Video slice download ready (%d MB): %s", os.path.getsize(output_path) // (1024 * 1024), output_path)
+        if not os.path.exists(output_path) or os.path.getsize(output_path) < 10000:
+            raise FileNotFoundError(f"Downloaded video stream file missing or empty: {output_path}")
+
+        logger.info("Video stream ready (%d MB): %s", os.path.getsize(output_path) // (1024 * 1024), output_path)
         return output_path
+
 
 
 

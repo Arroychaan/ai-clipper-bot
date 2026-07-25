@@ -160,8 +160,19 @@ def process_single_video(
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
-        # When video_path is a pre-cut slice, local rendering starts at 0.0s
-        render_start_time = 0.0
+        # Measure local video_path duration to accurately set render_start_time offset
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        v_fps = max(1.0, cap.get(cv2.CAP_PROP_FPS))
+        v_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        v_duration = v_frames / v_fps
+        cap.release()
+
+        # If video_path is a pre-cut slice (< 120s), render_start_time is 0.0s!
+        # If video_path is the full video (> 120s), render_start_time is start_sec!
+        render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
+        logger.info("Local video duration: %.1fs -> Selected render_start_time: %.2fs", v_duration, render_start_time)
+
 
         if force_gaming_mode:
             msg_render = f"🎮 [MODE WINDAH GAMING] Menjalankan AI OpenCV Facecam Tracker & FFmpeg Split-Screen 60fps -> {clip_filename}..."
