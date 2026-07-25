@@ -152,62 +152,63 @@ class YouTubeFetcher:
             logger.warning("youtube_transcript_api direct fetch hit error (%s). Falling back to pytubefix...", str(e_api))
 
         # 2. Secondary engine: pytubefix SRT caption extractor
-        try:
-            import pytubefix  # type: ignore
-            import re
-            yt = pytubefix.YouTube(youtube_url)
-            caption = None
-            for c_code in ['a.id', 'id', 'id-ID', 'a.en', 'en', 'en-US']:
-                try:
-                    caption = yt.captions[c_code]
-                    break
-                except KeyError:
-                    continue
+        for c_mode in ['MWEB', 'WEB']:
+            try:
+                import pytubefix  # type: ignore
+                import re
+                yt = pytubefix.YouTube(youtube_url, client=c_mode)
+                caption = None
+                for c_code in ['a.id', 'id', 'id-ID', 'a.en', 'en', 'en-US']:
+                    try:
+                        caption = yt.captions[c_code]
+                        break
+                    except KeyError:
+                        continue
 
-            if not caption and yt.captions:
-                caption = next(iter(yt.captions), None)
+                if not caption and yt.captions:
+                    caption = next(iter(yt.captions), None)
 
-            if caption:
-                srt_text = caption.generate_srt_captions()
-                blocks = srt_text.strip().split("\n\n")
-                segments = []
-                full_text_parts = []
-                words = []
+                if caption:
+                    srt_text = caption.generate_srt_captions()
+                    blocks = srt_text.strip().split("\n\n")
+                    segments = []
+                    full_text_parts = []
+                    words = []
 
-                for block in blocks:
-                    lines = block.strip().split("\n")
-                    if len(lines) >= 3:
-                        time_line = lines[1]
-                        text_val = " ".join(lines[2:]).strip()
-                        if not text_val:
-                            continue
+                    for block in blocks:
+                        lines = block.strip().split("\n")
+                        if len(lines) >= 3:
+                            time_line = lines[1]
+                            text_val = " ".join(lines[2:]).strip()
+                            if not text_val:
+                                continue
 
-                        match = re.match(r"(\d+):(\d+):(\d+),(\d+)\s*-->\s*(\d+):(\d+):(\d+),(\d+)", time_line)
-                        if match:
-                            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
-                            t_start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
-                            t_end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
-                            t_dur = max(0.1, t_end - t_start)
+                            match = re.match(r"(\d+):(\d+):(\d+),(\d+)\s*-->\s*(\d+):(\d+):(\d+),(\d+)", time_line)
+                            if match:
+                                h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
+                                t_start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+                                t_end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+                                t_dur = max(0.1, t_end - t_start)
 
-                            full_text_parts.append(text_val)
-                            segments.append({"start": t_start, "end": t_end, "text": text_val})
+                                full_text_parts.append(text_val)
+                                segments.append({"start": t_start, "end": t_end, "text": text_val})
 
-                            seg_words = text_val.split()
-                            if seg_words:
-                                w_dur = t_dur / len(seg_words)
-                                for w_i, w_str in enumerate(seg_words):
-                                    words.append({
-                                        "word": w_str,
-                                        "start": round(t_start + (w_i * w_dur), 2),
-                                        "end": round(t_start + ((w_i + 1) * w_dur), 2)
-                                    })
+                                seg_words = text_val.split()
+                                if seg_words:
+                                    w_dur = t_dur / len(seg_words)
+                                    for w_i, w_str in enumerate(seg_words):
+                                        words.append({
+                                            "word": w_str,
+                                            "start": round(t_start + (w_i * w_dur), 2),
+                                            "end": round(t_start + ((w_i + 1) * w_dur), 2)
+                                        })
 
-                full_text = " ".join(full_text_parts)
-                logger.info("Successfully fetched direct transcript via pytubefix for video %s: %d segments",
-                            video_id, len(segments))
-                return {"text": full_text, "segments": segments, "words": words}
-        except Exception as e_ptf:
-            logger.warning("pytubefix caption fetch failed for %s: %s", video_id, str(e_ptf))
+                    full_text = " ".join(full_text_parts)
+                    logger.info("Successfully fetched direct transcript via pytubefix (%s) for video %s: %d segments",
+                                c_mode, video_id, len(segments))
+                    return {"text": full_text, "segments": segments, "words": words}
+            except Exception as e_ptf:
+                logger.warning("pytubefix (%s) caption fetch failed for %s: %s", c_mode, video_id, str(e_ptf))
 
         return None
 
@@ -215,33 +216,34 @@ class YouTubeFetcher:
     def download_audio(youtube_url: str) -> Tuple[str, str]:
         """
         Downloads audio-only stream from YouTube converted to 16kHz mono WAV format.
-        Uses pytubefix direct stream URL + FFmpeg to bypass YouTube bot checks 100%!
+        Uses pytubefix (MWEB/WEB client) direct stream URL + FFmpeg to bypass YouTube bot checks 100%!
         """
         video_id = YouTubeFetcher.extract_video_id(youtube_url) or "custom"
         audio_path = os.path.join(TEMP_DIR, f"{video_id}_audio.wav")
 
         logger.info("Downloading 16kHz mono audio for: %s", youtube_url)
 
-        # 1. Primary Engine: pytubefix direct audio stream URL -> FFmpeg
-        try:
-            import pytubefix  # type: ignore
-            yt = pytubefix.YouTube(youtube_url)
-            stream = yt.streams.get_audio_only()
-            if stream and stream.url:
-                logger.info("Extracted direct pytubefix audio stream URL. Running FFmpeg conversion...")
-                ffmpeg_cmd = [
-                    "ffmpeg", "-y",
-                    "-i", stream.url,
-                    "-ar", "16000",
-                    "-ac", "1",
-                    audio_path
-                ]
-                subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-                if os.path.exists(audio_path) and os.path.getsize(audio_path) > 10000:
-                    logger.info("Audio downloaded successfully via pytubefix + FFmpeg: %s", audio_path)
-                    return video_id, audio_path
-        except Exception as ptf_err:
-            logger.warning("pytubefix audio stream extraction failed (%s). Retrying yt-dlp...", str(ptf_err))
+        # 1. Primary Engine: pytubefix (MWEB / WEB client) direct audio stream URL -> FFmpeg
+        for c_mode in ['MWEB', 'WEB']:
+            try:
+                import pytubefix  # type: ignore
+                yt = pytubefix.YouTube(youtube_url, client=c_mode)
+                stream = yt.streams.get_audio_only()
+                if stream and stream.url:
+                    logger.info("Extracted direct pytubefix audio stream URL (client=%s). Running FFmpeg conversion...", c_mode)
+                    ffmpeg_cmd = [
+                        "ffmpeg", "-y",
+                        "-i", stream.url,
+                        "-ar", "16000",
+                        "-ac", "1",
+                        audio_path
+                    ]
+                    subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 10000:
+                        logger.info("Audio downloaded successfully via pytubefix (%s) + FFmpeg: %s", c_mode, audio_path)
+                        return video_id, audio_path
+            except Exception as ptf_err:
+                logger.warning("pytubefix audio stream extraction (%s) failed (%s).", c_mode, str(ptf_err))
 
         # 2. Secondary Engine: yt-dlp with mobile client rotation
         output_template = os.path.join(TEMP_DIR, "%(id)s_audio.%(ext)s")
@@ -260,7 +262,7 @@ class YouTubeFetcher:
             ],
             "quiet": True,
             "overwrites": True,
-            "extractor_args": {"youtube": {"player_client": ["android", "web_creator", "mweb", "ios"]}}
+            "extractor_args": {"youtube": {"player_client": ["mweb", "android", "web_creator", "ios"]}}
         }
 
         cookies_path = str(YOUTUBE_COOKIES_FILE)
@@ -283,7 +285,7 @@ class YouTubeFetcher:
     @staticmethod
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
-        Downloads high-quality video stream. Uses pytubefix + FFmpeg slice cutting to bypass YouTube bot checks 100%!
+        Downloads high-quality video stream. Uses pytubefix (MWEB/WEB) + FFmpeg slice cutting to bypass YouTube bot checks 100%!
         """
         video_id = YouTubeFetcher.extract_video_id(youtube_url) or "custom"
         output_path = os.path.join(TEMP_DIR, f"{video_id}_video.mp4")
@@ -294,32 +296,34 @@ class YouTubeFetcher:
         logger.info("Downloading video stream (Start: %.1fs, Duration: %s) -> %s",
                     start_s, f"{dur_s:.1fs}" if dur_s else "FULL", output_path)
 
-        # 1. Primary Engine: pytubefix stream URL + FFmpeg fast slice cut
-        try:
-            import pytubefix  # type: ignore
-            yt = pytubefix.YouTube(youtube_url)
-            stream = yt.streams.filter(progressive=True).get_highest_resolution() or yt.streams.filter(file_extension="mp4").get_highest_resolution()
-            if stream and stream.url:
-                logger.info("Extracted pytubefix video stream URL. Cutting slice via FFmpeg...")
-                ffmpeg_cmd = ["ffmpeg", "-y"]
-                if start_s > 0:
-                    ffmpeg_cmd.extend(["-ss", f"{start_s:.2f}"])
-                if dur_s:
-                    ffmpeg_cmd.extend(["-t", f"{dur_s:.2f}"])
-                ffmpeg_cmd.extend([
-                    "-i", stream.url,
-                    "-c:v", "libx264",
-                    "-preset", "fast",
-                    "-crf", "17",
-                    "-c:a", "aac",
-                    output_path
-                ])
-                subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-                if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
-                    logger.info("Video stream slice downloaded successfully via pytubefix + FFmpeg: %s", output_path)
-                    return output_path
-        except Exception as ptf_v_err:
-            logger.warning("pytubefix video stream extraction failed (%s). Retrying yt-dlp...", str(ptf_v_err))
+        # 1. Primary Engine: pytubefix (MWEB / WEB client) stream URL + FFmpeg fast slice cut
+        for c_mode in ['MWEB', 'WEB']:
+            try:
+                import pytubefix  # type: ignore
+                yt = pytubefix.YouTube(youtube_url, client=c_mode)
+                stream = yt.streams.filter(progressive=True).get_highest_resolution() or yt.streams.filter(file_extension="mp4").get_highest_resolution()
+                if stream and stream.url:
+                    logger.info("Extracted pytubefix video stream URL (client=%s). Cutting slice via FFmpeg...", c_mode)
+                    ffmpeg_cmd = ["ffmpeg", "-y"]
+                    if start_s > 0:
+                        ffmpeg_cmd.extend(["-ss", f"{start_s:.2f}"])
+                    if dur_s:
+                        ffmpeg_cmd.extend(["-t", f"{dur_s:.2f}"])
+                    ffmpeg_cmd.extend([
+                        "-i", stream.url,
+                        "-c:v", "libx264",
+                        "-preset", "fast",
+                        "-crf", "17",
+                        "-c:a", "aac",
+                        output_path
+                    ])
+                    subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
+                        logger.info("Video stream slice downloaded successfully via pytubefix (%s) + FFmpeg: %s", c_mode, output_path)
+                        return output_path
+            except Exception as ptf_v_err:
+                logger.warning("pytubefix video stream extraction (%s) failed (%s).", c_mode, str(ptf_v_err))
+
 
         # 2. Secondary Engine: yt-dlp section range downloader
         ydl_opts = {
