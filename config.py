@@ -46,7 +46,8 @@ TARGET_WIDTH: int = 1080
 TARGET_HEIGHT: int = 1920
 MIN_CLIP_DURATION: float = 25.0
 MAX_CLIP_DURATION: float = 55.0
-MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "90"))
+MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "95"))
+
 TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "id").lower()  # 'id' for Indonesia, 'en' for Global market
 
 # Gaming Split-Screen Mode Configuration

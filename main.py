@@ -116,128 +116,125 @@ def process_single_video(
                 logger.warning(err_msg)
                 add_system_log(video_id, "ERROR", "[STEP 2/6]", err_msg, tb_audio)
                 mark_status(video_id, "FAILED", error_message=f"{err_msg}\n\nTraceback:\n{tb_audio}")
-                return False
-
-        # 3. Extract viral clip segment via Groq Llama 3.3 70B
-        msg_ai = "Mengevaluasi Viral Hook Score & menentukan momen klip terbaik via Groq Llama 3.3 70B..."
+                return         # 3. Extract multiple viral clips (5 to 20 clips) via Groq Llama 3.3 70B
+        msg_ai = "Mengevaluasi & mengekstrak 5-20 momen klip viral terbaik (Skor >= 95) via Groq Llama 3.3 70B..."
         logger.info("👉 [STEP 3/6] %s", msg_ai)
         add_system_log(video_id, "INFO", "[STEP 3/6]", msg_ai)
-        clip_meta = groq_client.extract_viral_clip(transcript_data)
         
-        viral_score = clip_meta.get("viral_score", 90)
-        logger.info("Evaluated Viral Hook Score: %d/100 (Threshold: %d)", viral_score, MIN_VIRAL_SCORE)
-
-        if viral_score < MIN_VIRAL_SCORE:
-            warn_score = f"Klip kandidat mendapat skor viral {viral_score}/100 (di bawah ambang minimum {MIN_VIRAL_SCORE}). Melewati render."
-            logger.warning(warn_score)
-            add_system_log(video_id, "WARNING", "[STEP 3/6]", warn_score)
+        viral_clips = groq_client.extract_multiple_viral_clips(transcript_data)
+        
+        if not viral_clips:
+            warn_msg = f"Tidak ditemukan kandidat klip dengan skor viral >= {MIN_VIRAL_SCORE}. Melewati render."
+            logger.warning(warn_msg)
+            add_system_log(video_id, "WARNING", "[STEP 3/6]", warn_msg)
             mark_status(video_id, "COMPLETED")
             return True
 
-        raw_start = clip_meta["start_time"]
-        raw_end = clip_meta["end_time"]
-        title = clip_meta.get("title", "Viral Clip")
-        caption = clip_meta.get("caption", title)
-        hashtags_str = clip_meta.get("hashtags_str", "#fyp #viral #shorts #trending")
+        total_extracted = len(viral_clips)
+        msg_summary = f"🎉 Terdeteksi {total_extracted} klip viral kelas atas (Skor >= 95)! Memulai batch rendering..."
+        logger.info(msg_summary)
+        add_system_log(video_id, "INFO", "[STEP 3/6]", msg_summary)
 
-        # 4. Calibrate cut timestamps via silence detection
-        msg_calib = f"Mengalibrasi waktu potong klip ({raw_start}s - {raw_end}s)..."
-        logger.info("👉 [STEP 4/6] %s", msg_calib)
-        add_system_log(video_id, "INFO", "[STEP 4/6]", msg_calib)
-        if audio_path and os.path.exists(audio_path):
-            start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
-        else:
-            start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
-        duration = end_sec - start_sec
+        # Batch loop through each extracted viral clip candidate
+        rendered_count = 0
+        for clip_idx, clip_meta in enumerate(viral_clips, start=1):
+            raw_start = clip_meta["start_time"]
+            raw_end = clip_meta["end_time"]
+            v_score = clip_meta.get("viral_score", 95)
+            title = clip_meta.get("title", f"Viral Clip {clip_idx}")
+            caption = clip_meta.get("caption", title)
+            hashtags_str = clip_meta.get("hashtags_str", "#fyp #viral #shorts #trending")
 
-        # 5. Download fast video stream slice
-        msg_dl = f"Mengunduh aliran video Full HD (Detik {start_sec:.1f} s/d {end_sec:.1f})..."
-        logger.info("👉 [STEP 5/6] %s", msg_dl)
-        add_system_log(video_id, "INFO", "[STEP 5/6]", msg_dl)
-        video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
+            # 4. Calibrate cut timestamps
+            msg_calib = f"[{clip_idx}/{total_extracted}] Mengalibrasi waktu potong klip '{title}' ({raw_start}s - {raw_end}s)..."
+            logger.info("👉 [STEP 4/6] %s", msg_calib)
+            add_system_log(video_id, "INFO", "[STEP 4/6]", msg_calib)
+            if audio_path and os.path.exists(audio_path):
+                start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
+            else:
+                start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
+            duration = end_sec - start_sec
 
-        # 6. Render Full HD 9:16 vertical short cleanly without subtitles
-        clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
-        output_clip_path = str(CLIPS_DIR / clip_filename)
-        
-        # Measure local video_path duration to accurately set render_start_time offset
-        import cv2
-        cap = cv2.VideoCapture(video_path)
-        v_fps = max(1.0, cap.get(cv2.CAP_PROP_FPS))
-        v_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        v_duration = v_frames / v_fps
-        cap.release()
+            # 5. Download video stream slice
+            msg_dl = f"[{clip_idx}/{total_extracted}] Mengunduh aliran video Full HD ({start_sec:.1f}s - {end_sec:.1f}s)..."
+            logger.info("👉 [STEP 5/6] %s", msg_dl)
+            add_system_log(video_id, "INFO", "[STEP 5/6]", msg_dl)
+            video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
-        # If video_path is a pre-cut slice (< 120s), render_start_time is 0.0s!
-        # If video_path is the full video (> 120s), render_start_time is start_sec!
-        render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
-        logger.info("Local video duration: %.1fs -> Selected render_start_time: %.2fs", v_duration, render_start_time)
+            # 6. Render Full HD 9:16 vertical short
+            clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
+            output_clip_path = str(CLIPS_DIR / clip_filename)
+            
+            import cv2
+            cap = cv2.VideoCapture(video_path)
+            v_fps = max(1.0, cap.get(cv2.CAP_PROP_FPS))
+            v_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            v_duration = v_frames / v_fps
+            cap.release()
 
+            render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
 
-        # Generate Master ASS subtitles with CapCut Neon Green active word highlighting
-        sub_ass_path = str(TEMP_DIR / f"{video_id}_subtitles.ass")
-        from core.audio_processor import generate_word_level_ass
-        try:
-            generate_word_level_ass(
-                words=transcript_data.get("words", []),
-                start_sec=start_sec,
-                end_sec=end_sec,
-                output_ass_path=sub_ass_path
-            )
-        except Exception as sub_err:
-            logger.warning("Failed to generate ASS subtitles: %s. Rendering without burn-in subtitles...", str(sub_err))
-            sub_ass_path = None
+            sub_ass_path = str(TEMP_DIR / f"{video_id}_sub_{clip_idx}.ass")
+            from core.audio_processor import generate_word_level_ass
+            try:
+                generate_word_level_ass(
+                    words=transcript_data.get("words", []),
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                    output_ass_path=sub_ass_path
+                )
+            except Exception as sub_err:
+                logger.warning("Failed to generate ASS subtitles: %s", str(sub_err))
+                sub_ass_path = None
 
-        if force_gaming_mode:
-            msg_render = f"🎮 [MODE WINDAH GAMING] Menjalankan AI OpenCV Facecam Tracker & FFmpeg Split-Screen 60fps -> {clip_filename}..."
-            logger.info("👉 [STEP 6/6] %s", msg_render)
-            add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
-            facecam_coords = detect_streamer_facecam(video_path)
-            render_success = render_gaming_split_shorts(
-                input_video=video_path,
-                start_time=render_start_time,
-                duration=duration,
-                output_path=output_clip_path,
-                facecam_coords=facecam_coords,
-                subtitle_path=sub_ass_path
-            )
-        else:
-            msg_render = f"🎙️ [MODE PODCAST] Merender Full HD 1080x1920 (9:16) 60fps vertical short -> {clip_filename}..."
-            logger.info("👉 [STEP 6/6] %s", msg_render)
-            add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
-            render_success = render_vertical_shorts(
-                input_video=video_path,
-                start_time=render_start_time,
-                duration=duration,
-                output_path=output_clip_path,
-                subtitle_path=sub_ass_path
-            )
+            if force_gaming_mode:
+                msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."
+                logger.info("👉 [STEP 6/6] %s", msg_render)
+                add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
+                facecam_coords = detect_streamer_facecam(video_path)
+                render_success = render_gaming_split_shorts(
+                    input_video=video_path,
+                    start_time=render_start_time,
+                    duration=duration,
+                    output_path=output_clip_path,
+                    facecam_coords=facecam_coords,
+                    subtitle_path=sub_ass_path
+                )
+            else:
+                msg_render = f"🎙️ [{clip_idx}/{total_extracted}] [MODE PODCAST] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."
+                logger.info("👉 [STEP 6/6] %s", msg_render)
+                add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
+                render_success = render_vertical_shorts(
+                    input_video=video_path,
+                    start_time=render_start_time,
+                    duration=duration,
+                    output_path=output_clip_path,
+                    subtitle_path=sub_ass_path
+                )
 
+            if render_success and os.path.exists(output_clip_path) and os.path.getsize(output_clip_path) >= 100000:
+                clip_id = f"{video_id}_{int(start_sec)}"
+                save_clip(
+                    clip_id=clip_id,
+                    video_id=video_id,
+                    title=title,
+                    start_time=start_sec,
+                    end_time=end_sec,
+                    clip_path=clip_filename,
+                    status="READY",
+                    viral_score=v_score,
+                    caption=caption,
+                    hashtags=hashtags_str
+                )
+                rendered_count += 1
+                add_system_log(video_id, "INFO", "[STEP 6/6]", f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil dibuat!")
 
-
-        if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
-            raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
-
-        # Save clip metadata into SQLite database
-        clip_id = f"{video_id}_{int(start_sec)}"
-        save_clip(
-            clip_id=clip_id,
-            video_id=video_id,
-            video_title=video_title,
-            clip_title=title,
-            caption=caption,
-            hashtags=hashtags_str,
-            viral_score=viral_score,
-            duration=round(duration, 1),
-            clip_path=clip_filename
-        )
-
-        # Mark DB status to COMPLETED
         mark_status(video_id, "COMPLETED")
-        msg_done = f"🎉 Klip berhasil dirender & disimpan ke PWA Dashboard! (Viral Score: {viral_score}/100)"
+        msg_done = f"🎉 Batch pemrosesan selesai! {rendered_count} klip viral (Skor >= 95) berhasil dirender & disimpan ke Dashboard!"
         logger.info(msg_done)
         add_system_log(video_id, "INFO", "COMPLETED", msg_done)
         return True
+
 
     except Exception as e:
         tb_str = traceback.format_exc()

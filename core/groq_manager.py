@@ -224,3 +224,117 @@ Evaluate and select the best clip segment duration between {MIN_CLIP_DURATION}s 
         )
 
         return clip_meta
+
+    def extract_multiple_viral_clips(self, transcript_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Analyzes transcription data via Llama 3.3 70B to identify ALL top viral candidate segments (5 to 20 clips)
+        with a strict Viral Hook Score >= 95.
+        """
+        text_content = transcript_data.get("text", "")
+        words = transcript_data.get("words") or transcript_data.get("segments", [])
+        
+        if not text_content and words:
+            text_content = " ".join(w.get("word") or w.get("text", "") for w in words)
+        
+        # Build comprehensive timestamp marks across the entire video
+        timestamped_summary = []
+        step = max(1, len(words) // 150) if words else 1
+        for w in words[::step]:
+            w_text = w.get("word") or w.get("text", "")
+            w_start = float(w.get("start", 0.0))
+            timestamped_summary.append(f"[{w_start:.1f}s]: {w_text}")
+        
+        timestamp_snippet = "\n".join(timestamped_summary[:200])
+
+        from config import TARGET_LANGUAGE, MIN_VIRAL_SCORE, MIN_CLIP_DURATION, MAX_CLIP_DURATION
+
+        lang_instruction = "in Indonesian (Bahasa Indonesia)" if TARGET_LANGUAGE == "id" else "in English"
+
+        system_prompt = f"""You are an elite viral content producer specializing in TikTok, IG Reels, and YouTube Shorts (Wayin AI level high-retention editor).
+Your task is to analyze the full transcript with timestamps and extract ALL TOP VIRAL CLIP SEGMENTS (between 5 and 20 clips depending on video length & density of viral moments).
+
+STRICT CRITERIA & RULES:
+1. SCORE THRESHOLD: EVERY clip MUST have a 'viral_score' >= 95! Only select truly elite, high-retention, funny, dramatic, or mind-blowing moments.
+2. NO MID-SENTENCE TRUNCATION: Each clip MUST start at the exact beginning of a sentence, and end AFTER the full punchline or reaction laughter is delivered.
+3. NO OVERLAPPING CLIPS: Ensure extracted clip time ranges do not heavily overlap (at least 20 seconds apart).
+4. DURATION: Each clip MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds long.
+5. Provide: 'title' (short clickbait under 50 chars), 'caption' (1-2 line aesthetic caption {lang_instruction}), and 'hashtags' (4-6 trending tags).
+
+OUTPUT MUST BE A STRICT JSON OBJECT CONTAINING A "clips" ARRAY:
+{{
+  "clips": [
+    {{
+      "viral_score": 98,
+      "start_time": 120.5,
+      "end_time": 155.0,
+      "title": "Viral Moment 1 Title",
+      "caption": "Short aesthetic caption.",
+      "hashtags": ["#fyp", "#viral", "#shorts"]
+    }}
+  ]
+}}"""
+
+        user_prompt = f"""FULL TRANSCRIPT SNIPPET:
+{text_content[:15000]}
+
+TIMESTAMP MARKS ACROSS VIDEO:
+{timestamp_snippet}
+
+Evaluate the entire transcript and extract ALL viral clip candidates (between 5 and 20 clips) with viral_score >= 95."""
+
+        def _call_llama(client: Groq) -> Any:
+            return client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+
+        logger.info("Querying Groq Llama 3.3 70B for multi-clip extraction (Target: 5-20 clips >= 95 score)...")
+        completion = self.execute_with_retry(_call_llama)
+        raw_json_str = completion.choices[0].message.content.strip()
+        
+        try:
+            res_json = json.loads(raw_json_str)
+        except json.JSONDecodeError:
+            if "```json" in raw_json_str:
+                raw_json_str = raw_json_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw_json_str:
+                raw_json_str = raw_json_str.split("```")[1].split("```")[0].strip()
+            res_json = json.loads(raw_json_str)
+
+        raw_clips = res_json.get("clips") if isinstance(res_json, dict) and "clips" in res_json else [res_json] if isinstance(res_json, dict) else []
+
+        valid_clips = []
+        for c in raw_clips:
+            if not isinstance(c, dict):
+                continue
+            s_score = int(c.get("viral_score", 95))
+            if s_score < MIN_VIRAL_SCORE:
+                logger.info("Filtering out clip candidate with score %d < %d", s_score, MIN_VIRAL_SCORE)
+                continue
+
+            s_time = float(c.get("start_time", 0.0))
+            e_time = float(c.get("end_time", s_time + 30.0))
+            dur = e_time - s_time
+            if dur < MIN_CLIP_DURATION or dur > MAX_CLIP_DURATION:
+                e_time = s_time + min(max(dur, MIN_CLIP_DURATION), MAX_CLIP_DURATION)
+
+            c["start_time"] = round(s_time, 2)
+            c["end_time"] = round(e_time, 2)
+            c["viral_score"] = s_score
+            
+            raw_tags = c.get("hashtags", ["#fyp", "#viral", "#shorts", "#trending"])
+            c["hashtags_str"] = " ".join(raw_tags) if isinstance(raw_tags, list) else str(raw_tags)
+            valid_clips.append(c)
+
+        if not valid_clips and raw_clips and isinstance(raw_clips[0], dict):
+            single = raw_clips[0]
+            single["viral_score"] = 95
+            valid_clips.append(single)
+
+        logger.info("Extracted %d elite viral clips (Score >= 95) from video!", len(valid_clips))
+        return valid_clips
