@@ -142,46 +142,7 @@ def process_single_video(
         logger.info("👉 [STEP 6/7] Downloading MP4 video stream section...")
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
-        # Extract audio slice from downloaded video_path for Groq Whisper v3 precision word timestamps
-        logger.info("👉 [STEP 5.5/7] Extracting clip audio slice for Groq Whisper v3 0-delay word timestamps (Start: %.2fs, Duration: %.2fs)...", start_sec, duration)
-        clip_audio_path = os.path.join(TEMP_DIR, f"{video_id}_clip_audio.wav")
-        clip_words = []
-        try:
-            cmd_cut_audio = [
-                "ffmpeg", "-y",
-                "-ss", f"{start_sec:.2f}",
-                "-t", f"{duration:.2f}",
-                "-i", video_path,
-                "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-                clip_audio_path
-            ]
-            subprocess.run(cmd_cut_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-
-            
-            logger.info("Running Groq Whisper Large v3 on clip audio slice (%s)...", clip_audio_path)
-            clip_transcription = groq_client.transcribe_audio(clip_audio_path)
-            clip_words = clip_transcription.get("words", [])
-            logger.info("Groq Whisper Large v3 extracted %d precise waveform words for clip!", len(clip_words))
-        except Exception as whisper_err:
-            logger.warning("Clip audio Whisper transcription failed (%s). Falling back to segment interpolation...", str(whisper_err))
-
-        # Generate CapCut/TikTok Master Auto-FYP ASS subtitles with 0-delay waveform timestamps
-        ass_filename = f"{video_id}_subtitles.ass"
-        sub_path = os.path.join(TEMP_DIR, ass_filename)
-        
-        # If clip_words came from clip_audio_path (which starts at 0.0s), timestamps are relative to 0.0s!
-        use_relative_zero = len(clip_words) > 0
-        generate_ass_subtitle_file(
-            words=clip_words if use_relative_zero else (transcript_data.get("words") or transcript_data.get("segments", [])),
-            start_sec=0.0 if use_relative_zero else start_sec,
-            end_sec=duration if use_relative_zero else end_sec,
-            output_ass_path=sub_path,
-            clip_audio_path=clip_audio_path if os.path.exists(clip_audio_path) else None
-        )
-
-
-
-        # 6. Render Full HD 9:16 vertical short using FFmpeg
+        # 6. Render Full HD 9:16 vertical short cleanly without subtitles
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
@@ -194,7 +155,7 @@ def process_single_video(
                 duration=duration,
                 output_path=output_clip_path,
                 facecam_coords=facecam_coords,
-                subtitle_path=sub_path
+                subtitle_path=None
             )
         else:
             logger.info("🎙️ [PODCAST MODE ACTIVE] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
@@ -203,12 +164,11 @@ def process_single_video(
                 start_time=start_sec,
                 duration=duration,
                 output_path=output_clip_path,
-                subtitle_path=sub_path
+                subtitle_path=None
             )
 
         if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
             raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
-
 
 
         # Save clip metadata into SQLite database
