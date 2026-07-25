@@ -44,11 +44,11 @@ def render_vertical_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to 1080x960
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=-1:960,crop=1080:960[top]"
+    # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to fill 1080x960
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
-    # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to 1080x960
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=-1:960,crop=1080:960[bottom]"
+    # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to fill 1080x960
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920 canvas)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -80,44 +80,16 @@ def render_vertical_shorts(
     logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg 60fps render command...")
 
     try:
-        process = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
-        )
-        logger.info("FFmpeg render completed successfully: %s", output_path)
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        logger.info("FFmpeg 100% Full-Screen render completed successfully: %s", output_path)
         return True
     except subprocess.CalledProcessError as e:
-        logger.warning("FFmpeg render with subtitles failed (%s). Retrying clean render without subtitles...",
-                       e.stderr[-300:] if e.stderr else "")
-        # Fallback filter complex without subtitles
-        filter_complex_fallback = f"{bg_filter}; f[0:v]scale={TARGET_WIDTH}:-1[fg]; {overlay_filter}".replace("f[0:v]", "[0:v]")
-        fallback_cmd = [
-            "ffmpeg", "-y",
-            "-ss", f"{start_time:.2f}",
-            "-t", f"{duration:.2f}",
-            "-i", input_video,
-            "-filter_complex", filter_complex_fallback,
-            "-map", "[outv]",
-            "-map", "0:a?",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "19",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            output_path
-        ]
-        try:
-            subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-            logger.info("Fallback FFmpeg render completed successfully: %s", output_path)
-            return True
-        except Exception as fallback_err:
-            logger.error("Fallback FFmpeg render also failed: %s", str(fallback_err))
-            return False
-    except Exception as e:
+        logger.error("FFmpeg render failed with stderr: %s", e.stderr[-500:] if e.stderr else str(e))
         return False
+    except Exception as e:
+        logger.error("Unexpected error during FFmpeg rendering: %s", str(e))
+        return False
+
 
 
 def render_gaming_split_shorts(
