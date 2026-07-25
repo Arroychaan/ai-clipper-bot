@@ -126,15 +126,15 @@ def render_gaming_split_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # Default facecam crop coordinates if not provided (Bottom-Left 640x480 crop for Windah Basudara)
-    fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 540}
-    cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 540)
+    # Default facecam crop coordinates if not provided (Top-Left 640x480 crop for Windah Basudara)
+    fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
+    cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 0)
 
-    # 1. Top Stream (1080x960): Gameplay Stream scaled & cropped to 1080x960
-    top_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    # 1. TOP HALF (1080x960): Streamer Facecam (Muka Windah Basudara) cropped & scaled to fill 1080x960
+    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
-    # 2. Bottom Stream (1080x960): Streamer Facecam cropped from coordinates & scaled to fill 1080x960
-    bottom_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
+    # 2. BOTTOM HALF (1080x960): Main Gameplay Stream centered crop & scaled to fill 1080x960
+    bottom_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -167,15 +167,18 @@ def render_gaming_split_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "superfast",
-        "-crf", "22",
+        "-preset", "fast",
+        "-crf", "17",
+        "-b:v", "8M",
+        "-maxrate", "10M",
+        "-bufsize", "16M",
         "-threads", "0",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "192k",
         output_path
     ]
 
-    logger.info("Executing Gaming Split-Screen superfast render command...")
+    logger.info("Executing Gaming Split-Screen (Top: Facecam, Bottom: Gameplay) 1080p Full HD render command...")
     try:
         subprocess.run(
             cmd,
@@ -202,13 +205,17 @@ def render_gaming_split_shorts(
             "-map", "[outv]",
             "-map", "0:a?",
             "-c:v", "libx264",
-            "-preset", "superfast",
-            "-crf", "22",
+            "-preset", "fast",
+            "-crf", "17",
+            "-b:v", "8M",
+            "-maxrate", "10M",
+            "-bufsize", "16M",
             "-threads", "0",
             "-c:a", "aac",
-            "-b:a", "128k",
+            "-b:a", "192k",
             output_path
         ]
+
         try:
             subprocess.run(
                 fallback_cmd,

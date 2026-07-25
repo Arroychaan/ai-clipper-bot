@@ -38,18 +38,18 @@ def detect_streamer_facecam(
     """
     logger.info("Running AI OpenCV Facecam Detector on video: %s", video_path)
 
-    # Default fallback for Indonesian gaming streamers (Windah Basudara / Bottom-Left facecam)
+    # Default fallback for Windah Basudara gaming streams (Top-Left webcam box)
     default_result = {
         "crop_w": 640,
         "crop_h": 480,
         "crop_x": 0,
-        "crop_y": 540,
+        "crop_y": 0,
         "detected": False,
-        "position": "bottom-left"
+        "position": "top-left"
     }
 
     if cv2 is None or not os.path.exists(video_path):
-        logger.warning("OpenCV is not installed or video file missing. Returning default bottom-left facecam crop.")
+        logger.warning("OpenCV is not installed or video file missing. Returning default top-left facecam crop.")
         return default_result
 
     try:
@@ -88,13 +88,13 @@ def detect_streamer_facecam(
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-            # Detect faces across all cascades
+            # Detect faces across all cascades (minSize 100x100 to ignore tiny game icons)
             for cascade in cascades:
                 faces = cascade.detectMultiScale(
                     gray,
                     scaleFactor=1.1,
                     minNeighbors=4,
-                    minSize=(50, 50),
+                    minSize=(100, 100),
                     maxSize=(int(video_width * 0.45), int(video_height * 0.55))
                 )
                 for (fx, fy, fw, fh) in faces:
@@ -110,26 +110,28 @@ def detect_streamer_facecam(
             avg_h = int(sum(f[3] for f in detected_faces) / len(detected_faces))
 
             # Expand bounding box around face (padding for head & webcam frame)
-            pad_w = int(avg_w * 1.8)
-            pad_h = int(avg_h * 2.0)
+            pad_w = int(avg_w * 2.2)
+            pad_h = int(avg_h * 2.2)
 
             center_x = avg_x + avg_w // 2
             center_y = avg_y + avg_h // 2
 
-            # Maintain 1080:960 aspect ratio (w:h = 9:8) for top half
-            box_w = max(480, pad_w)
+            # Ensure box is large enough to capture full webcam box (minimum 640x480)
+            box_w = max(640, pad_w)
             box_h = int(box_w * (960 / 1080))
 
             crop_x = max(0, min(video_width - box_w, center_x - box_w // 2))
             crop_y = max(0, min(video_height - box_h, center_y - box_h // 2))
 
-            pos = "bottom-left"
+            pos = "top-left"
             if center_x > video_width / 2 and center_y < video_height / 2:
                 pos = "top-right"
             elif center_x < video_width / 2 and center_y < video_height / 2:
                 pos = "top-left"
             elif center_x > video_width / 2 and center_y > video_height / 2:
                 pos = "bottom-right"
+            elif center_x < video_width / 2 and center_y > video_height / 2:
+                pos = "bottom-left"
 
             logger.info("AI Smart Facecam Detector locked onto streamer face at x=%d, y=%d (box: %dx%d, pos: %s)",
                         crop_x, crop_y, box_w, box_h, pos)
@@ -144,15 +146,8 @@ def detect_streamer_facecam(
             }
 
     except Exception as e:
-        logger.error("AI Facecam detection failed: %s. Falling back to default bottom-left.", str(e))
+        logger.error("AI Facecam detection failed: %s. Falling back to default top-left.", str(e))
 
-    # Smart fallback for Windah Basudara: Bottom-Left facecam box (x=0, y=540, w=640, h=480)
-    return {
-        "crop_w": int(video_width * 0.35) if 'video_width' in locals() else 640,
-        "crop_h": int(video_height * 0.45) if 'video_height' in locals() else 480,
-        "crop_x": 0,
-        "crop_y": int(video_height * 0.55) if 'video_height' in locals() else 540,
-        "detected": False,
-        "position": "bottom-left"
-    }
+    return default_result
+
 
