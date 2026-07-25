@@ -664,6 +664,10 @@ v>
       const modal = document.getElementById('progressModal');
       document.getElementById('progressVideoId').textContent = videoId;
       document.getElementById('progressModalTitle').textContent = 'Memproses Klip Instan...';
+      const spinner = document.getElementById('progressModalSpinner');
+      spinner.className = 'w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg border border-purple-500/30 shadow-inner';
+      spinner.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i>`;
+      
       document.getElementById('progressErrorContainer').classList.add('hidden');
       document.getElementById('progressBarFill').style.width = '15%';
       document.getElementById('progressPercentText').textContent = '15%';
@@ -676,6 +680,7 @@ v>
       pollVideoProgress(videoId);
       progressInterval = setInterval(() => pollVideoProgress(videoId), 1500);
     }
+
 
     function closeProgressModal() {
       document.getElementById('progressModal').classList.add('hidden');
