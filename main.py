@@ -77,11 +77,16 @@ def process_single_video(
     video_title = video_item.get("title", "YouTube Video")
     
     logger.info("==================================================")
+    import traceback
+    from core.db_manager import add_system_log
+
     logger.info("Processing Candidate Video: %s (%s)", video_title, video_url)
     logger.info("==================================================")
 
     # 1. Update DB state to PROCESSING
-    logger.info("👉 [STEP 1/7] Updating DB status to PROCESSING...")
+    msg_start = f"Inisialisasi pemrosesan klip instan untuk video '{video_title}' ({video_id})"
+    logger.info("👉 [STEP 1/6] %s", msg_start)
+    add_system_log(video_id, "INFO", "[STEP 1/6]", msg_start)
     mark_status(video_id, "PROCESSING")
 
     audio_path = None
@@ -91,36 +96,40 @@ def process_single_video(
 
     try:
         # 2. Get video transcript
-        logger.info("👉 [STEP 2/7] Fetching video transcript...")
+        msg_trans = f"Mengambil transkrip/subtitel YouTube..."
+        logger.info("👉 [STEP 2/6] %s", msg_trans)
+        add_system_log(video_id, "INFO", "[STEP 2/6]", msg_trans)
         transcript_data = YouTubeFetcher.get_transcript_direct(video_id)
         
         audio_path = None
         if not transcript_data:
-            logger.info("Direct transcript unavailable. Downloading audio for Groq Whisper...")
+            msg_whisper = "Transkrip langsung tidak tersedia. Mengunduh audio & menggunakan Groq Whisper Large v3..."
+            logger.info("👉 %s", msg_whisper)
+            add_system_log(video_id, "INFO", "[STEP 2/6]", msg_whisper)
             try:
                 _, audio_path = YouTubeFetcher.download_audio(video_url)
-                logger.info("👉 [STEP 3/7] Transcribing audio via Groq Whisper Large v3...")
                 transcript_data = groq_client.transcribe_audio(audio_path)
             except Exception as audio_err:
-                logger.warning("Audio download/transcription failed for candidate '%s': %s. Marking FAILED and skipping...", video_id, str(audio_err))
-                mark_status(video_id, "FAILED", error_message=str(audio_err))
+                tb_audio = traceback.format_exc()
+                err_msg = f"Gagal mengunduh/transkrip audio: {str(audio_err)}"
+                logger.warning(err_msg)
+                add_system_log(video_id, "ERROR", "[STEP 2/6]", err_msg, tb_audio)
+                mark_status(video_id, "FAILED", error_message=f"{err_msg}\n\nTraceback:\n{tb_audio}")
                 return False
 
-        else:
-            logger.info("👉 [STEP 3/7] Direct transcript retrieved instantly!")
-
-        # 4. Extract viral clip segment via Groq Llama 3.3 70B
-        logger.info("👉 [STEP 4/7] Evaluating viral hook score via Groq Llama 3.3 70B...")
+        # 3. Extract viral clip segment via Groq Llama 3.3 70B
+        msg_ai = "Mengevaluasi Viral Hook Score & menentukan momen klip terbaik via Groq Llama 3.3 70B..."
+        logger.info("👉 [STEP 3/6] %s", msg_ai)
+        add_system_log(video_id, "INFO", "[STEP 3/6]", msg_ai)
         clip_meta = groq_client.extract_viral_clip(transcript_data)
         
         viral_score = clip_meta.get("viral_score", 90)
         logger.info("Evaluated Viral Hook Score: %d/100 (Threshold: %d)", viral_score, MIN_VIRAL_SCORE)
 
         if viral_score < MIN_VIRAL_SCORE:
-            logger.warning(
-                "⚠️ Clip candidate for video '%s' scored %d/100, which is below the minimum threshold of %d. Skipping render.",
-                video_id, viral_score, MIN_VIRAL_SCORE
-            )
+            warn_score = f"Klip kandidat mendapat skor viral {viral_score}/100 (di bawah ambang minimum {MIN_VIRAL_SCORE}). Melewati render."
+            logger.warning(warn_score)
+            add_system_log(video_id, "WARNING", "[STEP 3/6]", warn_score)
             mark_status(video_id, "COMPLETED")
             return True
 
@@ -130,16 +139,20 @@ def process_single_video(
         caption = clip_meta.get("caption", title)
         hashtags_str = clip_meta.get("hashtags_str", "#fyp #viral #shorts #trending")
 
-        # 5. Calibrate cut timestamps via silence detection
-        logger.info("👉 [STEP 5/7] Calibrating cut timestamps...")
+        # 4. Calibrate cut timestamps via silence detection
+        msg_calib = f"Mengalibrasi waktu potong klip ({raw_start}s - {raw_end}s)..."
+        logger.info("👉 [STEP 4/6] %s", msg_calib)
+        add_system_log(video_id, "INFO", "[STEP 4/6]", msg_calib)
         if audio_path and os.path.exists(audio_path):
             start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
         else:
             start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
         duration = end_sec - start_sec
 
-        # Download fast video stream slice
-        logger.info("👉 [STEP 6/7] Downloading MP4 video stream section...")
+        # 5. Download fast video stream slice
+        msg_dl = f"Mengunduh aliran video Full HD (Detik {start_sec:.1f} s/d {end_sec:.1f})..."
+        logger.info("👉 [STEP 5/6] %s", msg_dl)
+        add_system_log(video_id, "INFO", "[STEP 5/6]", msg_dl)
         video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
         # 6. Render Full HD 9:16 vertical short cleanly without subtitles
@@ -147,7 +160,9 @@ def process_single_video(
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
         if force_gaming_mode:
-            logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Running AI OpenCV Facecam Tracker -> %s...", output_clip_path)
+            msg_render = f"🎮 [MODE WINDAH GAMING] Menjalankan AI OpenCV Facecam Tracker & FFmpeg Split-Screen 60fps -> {clip_filename}..."
+            logger.info("👉 [STEP 6/6] %s", msg_render)
+            add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
             facecam_coords = detect_streamer_facecam(video_path)
             render_success = render_gaming_split_shorts(
                 input_video=video_path,
@@ -158,7 +173,9 @@ def process_single_video(
                 subtitle_path=None
             )
         else:
-            logger.info("🎙️ [PODCAST MODE ACTIVE] Rendering Full HD 1080x1920 (9:16) 60fps vertical short -> %s...", output_clip_path)
+            msg_render = f"🎙️ [MODE PODCAST] Merender Full HD 1080x1920 (9:16) 60fps vertical short -> {clip_filename}..."
+            logger.info("👉 [STEP 6/6] %s", msg_render)
+            add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
             render_success = render_vertical_shorts(
                 input_video=video_path,
                 start_time=start_sec,
@@ -169,7 +186,6 @@ def process_single_video(
 
         if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
             raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
-
 
         # Save clip metadata into SQLite database
         clip_id = f"{video_id}_{int(start_sec)}"
@@ -187,16 +203,22 @@ def process_single_video(
 
         # Mark DB status to COMPLETED
         mark_status(video_id, "COMPLETED")
-        logger.info("🎉 Clip successfully generated & saved to PWA Dashboard! Clip ID: %s (Viral Score: %d)", clip_id, viral_score)
+        msg_done = f"🎉 Klip berhasil dirender & disimpan ke PWA Dashboard! (Viral Score: {viral_score}/100)"
+        logger.info(msg_done)
+        add_system_log(video_id, "INFO", "COMPLETED", msg_done)
         return True
 
     except Exception as e:
-        logger.error("Error processing video ID '%s': %s", video_id, str(e), exc_info=True)
-        mark_status(video_id, "FAILED", error_message=str(e))
+        tb_str = traceback.format_exc()
+        err_msg = f"Kegagalan kritis pemrosesan video '{video_id}': {str(e)}"
+        logger.error("%s\n%s", err_msg, tb_str)
+        add_system_log(video_id, "ERROR", "FAILED", err_msg, tb_str)
+        mark_status(video_id, "FAILED", error_message=f"{err_msg}\n\nTraceback:\n{tb_str}")
         return False
 
     finally:
         cleanup_temp_workspace()
+
 
 
 def main_loop() -> None:

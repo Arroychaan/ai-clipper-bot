@@ -237,9 +237,10 @@
 
     async function fetchLogs() {
       try {
-        const [resLogs, resFailed] = await Promise.all([
+        const [resLogs, resFailed, resSysLogs] = await Promise.all([
           fetch(`/api/admin/logs?level=${currentFilterLevel}`),
-          fetch('/api/admin/failed-videos')
+          fetch('/api/admin/failed-videos'),
+          fetch('/api/system-logs?limit=50')
         ]);
 
         if (resLogs.ok) {
@@ -255,11 +256,17 @@
           document.getElementById('metricFailedVideos').innerText = failedVideosList.length || 0;
         }
 
+        if (resSysLogs.ok) {
+          systemLogsList = await resSysLogs.json();
+        }
+
         renderTerminalLogs();
       } catch (e) {
         console.error('Failed to fetch logs:', e);
       }
     }
+
+    let systemLogsList = [];
 
     function setFilterLevel(level) {
       currentFilterLevel = level;
@@ -286,7 +293,7 @@
 
       if (currentFilterLevel === 'FAILED') {
         if (!failedVideosList || failedVideosList.length === 0) {
-          terminal.innerHTML = '<div class="text-emerald-400">🟢 Tidak ada video gagal (Semua video sukses atau belum ada data).</div>';
+          terminal.innerHTML = '<div class="text-emerald-400 font-bold p-3 bg-emerald-950/30 rounded-xl border border-emerald-800/40">🟢 Tidak ada video gagal. Seluruh sistem berjalan 100% lancar!</div>';
           return;
         }
 
@@ -294,18 +301,66 @@
         failedVideosList.forEach((fv, idx) => {
           if (searchKeyword && !JSON.stringify(fv).toLowerCase().includes(searchKeyword)) return;
           html += `
-            <div class="p-3 rounded-xl bg-slate-900/80 border border-rose-500/20 mb-3 space-y-1">
-              <div class="flex items-center justify-between text-rose-400 font-bold">
-                <span>[${idx + 1}] Video ID: ${escapeHtml(fv.video_id)}</span>
-                <span class="text-[10px] text-slate-400">${escapeHtml(fv.processed_at || '')}</span>
+            <div class="p-4 rounded-2xl bg-rose-950/40 border border-rose-600/50 mb-3 space-y-2 shadow-lg">
+              <div class="flex items-center justify-between text-rose-400 font-bold text-xs">
+                <span class="flex items-center gap-2">
+                  <i class="fa-solid fa-triangle-exclamation text-rose-400 animate-pulse"></i>
+                  [${idx + 1}] Video ID: ${escapeHtml(fv.video_id)}
+                </span>
+                <span class="text-[11px] text-slate-400 font-mono">${escapeHtml(fv.processed_at || '')}</span>
               </div>
-              <div class="text-slate-300 text-xs">${escapeHtml(fv.title || 'Untitled Video')}</div>
-              <div class="text-rose-300 text-xs font-mono bg-black/40 p-2 rounded border border-rose-900/50 mt-1 whitespace-pre-wrap">ERROR: ${escapeHtml(fv.error_message || 'Unknown Error')}</div>
+              <div class="text-white text-xs font-bold">${escapeHtml(fv.title || 'Custom Video')}</div>
+              <div class="text-rose-300 text-[11px] font-mono bg-slate-950 p-3 rounded-xl border border-rose-800/60 mt-1 whitespace-pre-wrap select-all leading-relaxed shadow-inner">
+                <p class="font-bold text-rose-400 mb-1">CRITICAL TRACEBACK ERROR LOG:</p>
+                ${escapeHtml(fv.error_message || 'Unknown Error')}
+              </div>
             </div>
           `;
         });
         terminal.innerHTML = html || '<div class="text-slate-500 italic">Tidak ada video failed yang cocok dengan pencarian.</div>';
         return;
+      }
+
+      // Render System Logs if available
+      if (systemLogsList && systemLogsList.length > 0) {
+        let html = '';
+        systemLogsList.forEach(sLog => {
+          if (currentFilterLevel !== 'ALL' && sLog.level !== currentFilterLevel) return;
+          if (searchKeyword && !JSON.stringify(sLog).toLowerCase().includes(searchKeyword)) return;
+
+          let badgeColor = 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+          let borderColor = 'border-slate-800/80';
+          if (sLog.level === 'ERROR') {
+            badgeColor = 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+            borderColor = 'border-rose-600/40 bg-rose-950/20';
+          } else if (sLog.level === 'WARNING') {
+            badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+          }
+
+          html += `
+            <div class="p-3 rounded-xl bg-slate-950 border ${borderColor} mb-2 space-y-1 font-mono text-xs">
+              <div class="flex items-center justify-between text-[11px]">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeColor}">${sLog.level}</span>
+                  <span class="text-purple-300 font-bold">${escapeHtml(sLog.step || '')}</span>
+                  <span class="text-slate-400">Vid: ${escapeHtml(sLog.video_id || '-')}</span>
+                </div>
+                <span class="text-slate-500 text-[10px]">${escapeHtml(sLog.created_at || '')}</span>
+              </div>
+              <div class="text-slate-200 text-xs font-sans mt-1">${escapeHtml(sLog.message)}</div>
+              ${sLog.traceback ? `
+                <div class="text-rose-300 text-[10px] font-mono bg-black/60 p-2.5 rounded-lg border border-rose-900/60 mt-1 whitespace-pre-wrap select-all leading-relaxed">
+                  <p class="font-bold text-rose-400 mb-0.5">FULL TRACEBACK:</p>
+                  ${escapeHtml(sLog.traceback)}
+                </div>
+              ` : ''}
+            </div>
+          `;
+        });
+        if (html) {
+          terminal.innerHTML = html;
+          return;
+        }
       }
 
       if (!rawLogLines || rawLogLines.length === 0) {
@@ -333,6 +388,7 @@
 
       terminal.innerHTML = html || '<div class="text-slate-500 italic">Tidak ada log yang cocok dengan kata kunci pencarian.</div>';
     }
+
 
     function filterLogsLocally() {
       renderTerminalLogs();

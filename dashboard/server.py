@@ -183,6 +183,56 @@ def api_delete_clip(clip_id: str):
     return {"message": "Clip deleted successfully", "clip_id": clip_id}
 
 
+@app.get("/api/system-logs")
+def api_get_system_logs(limit: int = Query(50), video_id: Optional[str] = Query(None)):
+    """Returns list of system diagnostic logs with traceback."""
+    from core.db_manager import get_system_logs
+    return get_system_logs(limit=limit, video_id=video_id)
+
+
+@app.get("/api/video-progress/{video_id}")
+def api_get_video_progress(video_id: str):
+    """Returns live step-by-step progress status and traceback for a video_id."""
+    from core.db_manager import get_system_logs, get_connection
+    logs = get_system_logs(limit=10, video_id=video_id)
+    
+    status = "PROCESSING"
+    error_message = None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, error_message FROM processed_videos WHERE video_id = ?", (video_id,))
+        row = cursor.fetchone()
+        if row:
+            status = row["status"]
+            error_message = row["error_message"]
+
+    latest_log = logs[0] if logs else {}
+    step = latest_log.get("step", "[STEP 1/6]")
+    message = latest_log.get("message", "Inisialisasi pemrosesan klip...")
+    traceback_str = latest_log.get("traceback") or error_message
+
+    percent = 15
+    if "[STEP 1/6]" in step: percent = 15
+    elif "[STEP 2/6]" in step: percent = 30
+    elif "[STEP 3/6]" in step: percent = 50
+    elif "[STEP 4/6]" in step: percent = 65
+    elif "[STEP 5/6]" in step: percent = 80
+    elif "[STEP 6/6]" in step: percent = 95
+    elif status == "COMPLETED": percent = 100
+    elif status == "FAILED": percent = 100
+
+    return {
+        "video_id": video_id,
+        "status": status,
+        "step": step,
+        "message": message,
+        "percent": percent,
+        "traceback": traceback_str,
+        "logs": logs
+    }
+
+
+
 class ModePayload(BaseModel):
     mode: str
 

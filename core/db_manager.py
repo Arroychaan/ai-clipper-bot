@@ -91,10 +91,24 @@ def init_db() -> None:
             );
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS system_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT,
+                level TEXT NOT NULL CHECK(level IN ('INFO', 'WARNING', 'ERROR')),
+                step TEXT,
+                message TEXT NOT NULL,
+                traceback TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
         # Ensure default active_mode setting is initialized
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_mode', 'PODCAST')")
         conn.commit()
     logger.info("SQLite database initialized at: %s", DB_PATH)
+
     try:
         purge_invalid_clips()
     except Exception as e:
@@ -307,8 +321,45 @@ def get_dashboard_stats() -> dict:
 
         return {
             "total_clips": total,
-            "ready_clips": ready,
-            "posted_clips": posted,
+            "ready_to_post": ready,
+            "posted": posted,
             "avg_viral_score": avg_score
         }
 
+
+def add_system_log(video_id: Optional[str], level: str, step: str, message: str, traceback_str: Optional[str] = None) -> None:
+    """Inserts a structured diagnostic/progress system log entry into SQLite DB."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO system_logs (video_id, level, step, message, traceback)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (video_id, level, step, message, traceback_str)
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error("Failed to insert system log into DB: %s", str(e))
+
+
+def get_system_logs(limit: int = 50, video_id: Optional[str] = None) -> list[dict]:
+    """Retrieves list of system diagnostic logs."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            if video_id:
+                cursor.execute(
+                    "SELECT * FROM system_logs WHERE video_id = ? ORDER BY id DESC LIMIT ?",
+                    (video_id, limit)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM system_logs ORDER BY id DESC LIMIT ?",
+                    (limit,)
+                )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+    except Exception:
+        return []
