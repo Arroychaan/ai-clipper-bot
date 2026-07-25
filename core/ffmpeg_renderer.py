@@ -80,9 +80,19 @@ def render_vertical_shorts(
     logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg 60fps render command...")
 
     try:
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+            timeout=180
+        )
         logger.info("FFmpeg 100% Full-Screen render completed successfully: %s", output_path)
         return True
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg render timed out after 180 seconds for: %s", output_path)
+        return False
     except subprocess.CalledProcessError as e:
         logger.error("FFmpeg render failed with stderr: %s", e.stderr[-500:] if e.stderr else str(e))
         return False
@@ -146,8 +156,6 @@ def render_gaming_split_shorts(
     else:
         final_sub_filter = "[base]null,fps=60[outv]"
 
-
-
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
 
     cmd = [
@@ -168,9 +176,19 @@ def render_gaming_split_shorts(
 
     logger.info("Executing Gaming Split-Screen 60fps render command...")
     try:
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+            timeout=180
+        )
         logger.info("Gaming Split-Screen render completed successfully: %s", output_path)
         return True
+    except subprocess.TimeoutExpired:
+        logger.error("Gaming Split-Screen render timed out after 180 seconds!")
+        return False
     except subprocess.CalledProcessError as e:
         logger.warning("Gaming Split-Screen render with subtitles failed (%s). Retrying without subtitles...",
                        e.stderr[-300:] if e.stderr else "")
@@ -191,7 +209,14 @@ def render_gaming_split_shorts(
             output_path
         ]
         try:
-            subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            subprocess.run(
+                fallback_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+                timeout=180
+            )
             logger.info("Fallback Gaming Split-Screen render completed successfully: %s", output_path)
             return True
         except Exception as fallback_err:
@@ -200,6 +225,7 @@ def render_gaming_split_shorts(
     except Exception as e:
         logger.error("Unexpected error during Gaming Split-Screen rendering: %s", str(e))
         return False
+
 
 
 
