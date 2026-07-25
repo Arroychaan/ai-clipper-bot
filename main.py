@@ -160,6 +160,9 @@ def process_single_video(
         clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
         output_clip_path = str(CLIPS_DIR / clip_filename)
         
+        # When video_path is a pre-cut slice, local rendering starts at 0.0s
+        render_start_time = 0.0
+
         if force_gaming_mode:
             msg_render = f"🎮 [MODE WINDAH GAMING] Menjalankan AI OpenCV Facecam Tracker & FFmpeg Split-Screen 60fps -> {clip_filename}..."
             logger.info("👉 [STEP 6/6] %s", msg_render)
@@ -167,7 +170,7 @@ def process_single_video(
             facecam_coords = detect_streamer_facecam(video_path)
             render_success = render_gaming_split_shorts(
                 input_video=video_path,
-                start_time=start_sec,
+                start_time=render_start_time,
                 duration=duration,
                 output_path=output_clip_path,
                 facecam_coords=facecam_coords,
@@ -179,11 +182,12 @@ def process_single_video(
             add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
             render_success = render_vertical_shorts(
                 input_video=video_path,
-                start_time=start_sec,
+                start_time=render_start_time,
                 duration=duration,
                 output_path=output_clip_path,
                 subtitle_path=None
             )
+
 
         if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:
             raise RuntimeError(f"FFmpeg vertical render failed or output clip is corrupted (< 100KB) for video {video_id}")
