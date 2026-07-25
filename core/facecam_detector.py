@@ -38,17 +38,18 @@ def detect_streamer_facecam(
     """
     logger.info("Running AI OpenCV Facecam Detector on video: %s", video_path)
 
+    # Default fallback for Indonesian gaming streamers (Windah Basudara / Bottom-Left facecam)
     default_result = {
         "crop_w": 640,
         "crop_h": 480,
         "crop_x": 0,
-        "crop_y": 0,
+        "crop_y": 540,
         "detected": False,
-        "position": "top-left"
+        "position": "bottom-left"
     }
 
     if cv2 is None or not os.path.exists(video_path):
-        logger.warning("OpenCV is not installed or video file missing. Returning default top-left facecam crop.")
+        logger.warning("OpenCV is not installed or video file missing. Returning default bottom-left facecam crop.")
         return default_result
 
     try:
@@ -62,13 +63,16 @@ def detect_streamer_facecam(
         video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
         video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
 
-        # Load Haar Cascade face detector
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        face_cascade = cv2.CascadeClassifier(cascade_path)
+        # Multi-Cascade Classifiers for high-accuracy face & profile detection
+        cascades = []
+        for c_name in ["haarcascade_frontalface_default.xml", "haarcascade_frontalface_alt2.xml", "haarcascade_profileface.xml"]:
+            c_path = cv2.data.haarcascades + c_name
+            if os.path.exists(c_path):
+                cascades.append(cv2.CascadeClassifier(c_path))
 
         if sample_timestamps_sec is None:
-            # Sample 5 frames across the video
-            sample_timestamps_sec = [5.0, 15.0, 30.0, 45.0, 60.0]
+            # Sample 8 frames across the first 60 seconds
+            sample_timestamps_sec = [3.0, 8.0, 15.0, 25.0, 35.0, 45.0, 55.0]
 
         detected_faces = []
 
@@ -84,17 +88,17 @@ def detect_streamer_facecam(
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-            # Detect faces in frame
-            faces = face_cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(60, 60),
-                maxSize=(int(video_width * 0.4), int(video_height * 0.5))
-            )
-
-            for (fx, fy, fw, fh) in faces:
-                detected_faces.append((fx, fy, fw, fh))
+            # Detect faces across all cascades
+            for cascade in cascades:
+                faces = cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=4,
+                    minSize=(50, 50),
+                    maxSize=(int(video_width * 0.45), int(video_height * 0.55))
+                )
+                for (fx, fy, fw, fh) in faces:
+                    detected_faces.append((fx, fy, fw, fh))
 
         cap.release()
 
@@ -119,15 +123,15 @@ def detect_streamer_facecam(
             crop_x = max(0, min(video_width - box_w, center_x - box_w // 2))
             crop_y = max(0, min(video_height - box_h, center_y - box_h // 2))
 
-            pos = "top-left"
+            pos = "bottom-left"
             if center_x > video_width / 2 and center_y < video_height / 2:
                 pos = "top-right"
-            elif center_x < video_width / 2 and center_y > video_height / 2:
-                pos = "bottom-left"
+            elif center_x < video_width / 2 and center_y < video_height / 2:
+                pos = "top-left"
             elif center_x > video_width / 2 and center_y > video_height / 2:
                 pos = "bottom-right"
 
-            logger.info("AI Facecam Detector found streamer face at x=%d, y=%d (box: %dx%d, pos: %s)",
+            logger.info("AI Smart Facecam Detector locked onto streamer face at x=%d, y=%d (box: %dx%d, pos: %s)",
                         crop_x, crop_y, box_w, box_h, pos)
 
             return {
@@ -140,14 +144,15 @@ def detect_streamer_facecam(
             }
 
     except Exception as e:
-        logger.error("AI Facecam detection failed: %s. Falling back to default top-left.", str(e))
+        logger.error("AI Facecam detection failed: %s. Falling back to default bottom-left.", str(e))
 
-    # Default fallback: Windah Basudara / Streamer Top-Left facecam box
+    # Smart fallback for Windah Basudara: Bottom-Left facecam box (x=0, y=540, w=640, h=480)
     return {
-        "crop_w": 640,
-        "crop_h": 480,
+        "crop_w": int(video_width * 0.35) if 'video_width' in locals() else 640,
+        "crop_h": int(video_height * 0.45) if 'video_height' in locals() else 480,
         "crop_x": 0,
-        "crop_y": 0,
+        "crop_y": int(video_height * 0.55) if 'video_height' in locals() else 540,
         "detected": False,
-        "position": "top-left"
+        "position": "bottom-left"
     }
+
