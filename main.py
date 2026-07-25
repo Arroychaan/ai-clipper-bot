@@ -72,9 +72,10 @@ def process_single_video(
     Executes the clipping pipeline for a single YouTube video.
     Guarantees atomic file cleanup using try...finally.
     """
-    video_id = video_item["id"]
+    video_id = video_item.get("id") or video_item.get("video_id") or ""
     video_url = video_item["url"]
     video_title = video_item.get("title", "YouTube Video")
+
     
     logger.info("==================================================")
     import traceback

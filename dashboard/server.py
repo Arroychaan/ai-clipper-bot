@@ -136,7 +136,8 @@ def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundT
             from core.db_manager import get_setting
             groq_client = ResilientGroqClient()
             active_mode = get_setting("active_mode", "PODCAST")
-            item = {"video_id": v_id, "title": f"Custom VOD ({v_id})", "url": clean_url}
+            item = {"id": v_id, "video_id": v_id, "title": f"Custom VOD ({v_id})", "url": clean_url}
+
             process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
         except Exception as e:
             import traceback
