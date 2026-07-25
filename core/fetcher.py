@@ -23,13 +23,21 @@ class YouTubeFetcher:
     @staticmethod
     def extract_video_id(url: str) -> str:
         """Extracts standard 11-character YouTube video ID from various URL formats."""
+        import re
+        match = re.search(r"(?:v=|\/live\/|\/shorts\/|\/embed\/|youtu\.be\/|\/v\/|e\/|watch\?v=)([^#\&\?\/]{11})", url)
+        if match:
+            return match.group(1)
         if yt_dlp is None:
             logger.error("yt-dlp is not installed.")
             return ""
-        ydl_opts = {"quiet": True, "skip_download": True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return info.get("id", "")
+        try:
+            ydl_opts = {"quiet": True, "skip_download": True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return info.get("id", "")
+        except Exception:
+            return ""
+
 
     @staticmethod
     def get_latest_videos(feed_url_or_channel: str = SOURCE_FEED_URL, limit: int = MAX_FEED_ITEMS) -> List[Dict[str, str]]:

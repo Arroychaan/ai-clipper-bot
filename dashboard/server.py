@@ -112,17 +112,16 @@ class CustomUrlPayload(BaseModel):
 @app.post("/api/clip-url")
 def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundTasks):
     """Triggers instant processing for a specific YouTube VOD link (Wayin.ai style)."""
+    import re
     raw_url = payload.url.strip()
-    v_id = None
-    if "v=" in raw_url:
-        v_id = raw_url.split("v=")[1].split("&")[0]
-    elif "youtu.be/" in raw_url:
-        v_id = raw_url.split("youtu.be/")[1].split("?")[0]
+    match = re.search(r"(?:v=|\/live\/|\/shorts\/|\/embed\/|youtu\.be\/|\/v\/|e\/|watch\?v=)([^#\&\?\/]{11})", raw_url)
+    v_id = match.group(1) if match else None
     
     if not v_id:
         raise HTTPException(status_code=400, detail="Link YouTube tidak valid. Harap gunakan format link YouTube yang benar.")
 
     clean_url = f"https://www.youtube.com/watch?v={v_id}"
+
     
     from core.db_manager import add_candidate_video
     add_candidate_video(v_id, f"Custom VOD ({v_id})", clean_url, "custom")
