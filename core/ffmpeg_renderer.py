@@ -126,12 +126,18 @@ def render_gaming_split_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # Default facecam crop coordinates if not provided (Top-Left 640x480 crop for Windah Basudara)
+    # Default facecam crop coordinates if not provided (Top-Left crop for Windah Basudara facecam)
     fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
-    cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 0)
+    cw = max(100, int(fc.get("crop_w", 640)))
+    ch = max(100, int(fc.get("crop_h", 480)))
+    cx = max(0, int(fc.get("crop_x", 0)))
+    cy = max(0, int(fc.get("crop_y", 0)))
 
-    # 1. TOP HALF (1080x960): Streamer Facecam (Muka Windah Basudara) cropped & scaled to fill 1080x960
-    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    # 1. TOP HALF (1080x960): Streamer Facecam cropped with 100% boundary-safe FFmpeg min/max expressions & scaled to 1080x960
+    top_filter = (
+        f"[0:v]crop=w='min(iw,{cw})':h='min(ih,{ch})':x='max(0,min(iw-w,{cx}))':y='max(0,min(ih-h,{cy}))',"
+        f"scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    )
 
     # 2. BOTTOM HALF (1080x960): Main Gameplay Stream centered crop & scaled to fill 1080x960
     bottom_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
