@@ -174,6 +174,20 @@ def process_single_video(
         logger.info("Local video duration: %.1fs -> Selected render_start_time: %.2fs", v_duration, render_start_time)
 
 
+        # Generate Master ASS subtitles with CapCut Neon Green active word highlighting
+        sub_ass_path = str(TEMP_DIR / f"{video_id}_subtitles.ass")
+        from core.audio_processor import generate_word_level_ass
+        try:
+            generate_word_level_ass(
+                words=transcript_data.get("words", []),
+                start_sec=start_sec,
+                end_sec=end_sec,
+                output_ass_path=sub_ass_path
+            )
+        except Exception as sub_err:
+            logger.warning("Failed to generate ASS subtitles: %s. Rendering without burn-in subtitles...", str(sub_err))
+            sub_ass_path = None
+
         if force_gaming_mode:
             msg_render = f"🎮 [MODE WINDAH GAMING] Menjalankan AI OpenCV Facecam Tracker & FFmpeg Split-Screen 60fps -> {clip_filename}..."
             logger.info("👉 [STEP 6/6] %s", msg_render)
@@ -185,7 +199,7 @@ def process_single_video(
                 duration=duration,
                 output_path=output_clip_path,
                 facecam_coords=facecam_coords,
-                subtitle_path=None
+                subtitle_path=sub_ass_path
             )
         else:
             msg_render = f"🎙️ [MODE PODCAST] Merender Full HD 1080x1920 (9:16) 60fps vertical short -> {clip_filename}..."
@@ -196,8 +210,9 @@ def process_single_video(
                 start_time=render_start_time,
                 duration=duration,
                 output_path=output_clip_path,
-                subtitle_path=None
+                subtitle_path=sub_ass_path
             )
+
 
 
         if not render_success or not os.path.exists(output_clip_path) or os.path.getsize(output_clip_path) < 100000:

@@ -140,24 +140,27 @@ class ResilientGroqClient:
 
         lang_instruction = "in Indonesian (Bahasa Indonesia)" if TARGET_LANGUAGE == "id" else "in English"
 
-        system_prompt = f"""You are an elite viral content producer specializing in TikTok, IG Reels, and YouTube Shorts.
-Your task is to analyze the speech transcript and select the SINGLE MOST VIRAL segment with high emotional hook and retention.
+        system_prompt = f"""You are an elite viral content producer specializing in TikTok, IG Reels, and YouTube Shorts (Wayin AI level high-retention editor).
+Your task is to analyze the speech transcript with timestamps and select the SINGLE MOST VIRAL, COMPLETE STORY/JOKE SEGMENT.
 
-STRICT REQUIREMENTS:
-1. Duration MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds.
-2. Calculate a 'viral_score' (integer 1-100) evaluating hook strength, curiosity gap, emotional peak, and punchline. Only assign >90 for genuinely elite viral moments.
-3. Generate 'title': A short, clickbait viral title (under 60 chars) {lang_instruction}.
-4. Generate 'caption': A SHORT, MINIMALIST 1-2 line aesthetic caption {lang_instruction} that engages viewers to comment.
-5. Generate 'hashtags': An array of 4-6 hot trending hashtags suitable for TikTok & Shorts (e.g., ["#fyp", "#viral", "#shorts", "#trending", "#mindset"]).
-6. Output MUST be strictly valid JSON matching this format:
+CRITICAL FYP RETENTION RULES:
+1. NEVER TRUNCATE OR CUT OFF MID-SENTENCE! The start_time MUST begin at the exact start of an engaging sentence, and end_time MUST conclude AFTER the full joke punchline or streamer's reaction laughter is completely delivered.
+2. Duration MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds.
+3. Calculate 'viral_score' (integer 1-100) evaluating hook strength (first 3s), curiosity gap, emotional peak, and punchline payoff.
+4. Generate 'title': Short clickbait viral title (under 50 chars) {lang_instruction}.
+5. Generate 'caption': Short 1-2 line aesthetic caption {lang_instruction}.
+6. Generate 'hashtags': Array of 4-6 trending hashtags.
+
+OUTPUT JSON FORMAT ONLY:
 {{
   "viral_score": 95,
   "start_time": 120.5,
   "end_time": 155.0,
   "title": "Viral Clickbait Title",
-  "caption": "Short minimalist caption line.",
-  "hashtags": ["#fyp", "#viral", "#shorts", "#trending"]
+  "caption": "Short aesthetic caption.",
+  "hashtags": ["#fyp", "#viral", "#shorts"]
 }}"""
+
 
         user_prompt = f"""TRANSCRIPT SNIPPET:
 {text_content[:7000]}
