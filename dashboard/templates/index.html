@@ -213,7 +213,7 @@ v>
     <!-- FILTER TABS & SEARCH -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
       <!-- Tabs -->
-      <div class="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+      <div class="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-800 flex-wrap gap-y-1">
         <button onclick="setFilter('READY')" id="tabREADY" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-sm">
           📥 Siap Upload
         </button>
@@ -223,12 +223,16 @@ v>
         <button onclick="setFilter('ALL')" id="tabALL" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
           📁 Semua Klip
         </button>
+        <button onclick="switchMainView('VPS_STORAGE')" id="tabVPS_STORAGE" class="px-3.5 py-1.5 rounded-lg text-xs font-bold text-purple-300 hover:text-white transition-all bg-purple-950/60 border border-purple-500/40 flex items-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-server text-purple-400"></i>
+          <span>💾 Manager VPS Storage</span>
+        </button>
       </div>
 
       <!-- Viral Filter indicator -->
       <div class="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl font-medium">
         <i class="fa-solid fa-fire text-rose-500"></i>
-        <span>Only Score > 90 Active</span>
+        <span>Only Score >= 95 Active</span>
       </div>
     </div>
 
@@ -239,6 +243,94 @@ v>
         <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-3 text-indigo-500"></i>
         <p class="text-sm">Memuat daftar klip video...</p>
       </div>
+    </div>
+
+    <!-- VPS STORAGE MANAGER CONTAINER (HIDDEN BY DEFAULT) -->
+    <div id="vpsStorageContainer" class="hidden space-y-6">
+
+      <!-- DISK SPACE & BOT USAGE CARDS -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <!-- VPS Disk Free Card -->
+        <div class="glass-card p-5 rounded-2xl border border-purple-500/20 bg-gradient-to-br from-slate-900 via-purple-950/30 to-slate-900">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-purple-300 uppercase tracking-wider">Storage VPS Bebas</p>
+              <h3 id="vpsDiskFree" class="text-2xl font-black text-white mt-1">0.0 GB</h3>
+              <p id="vpsDiskTotal" class="text-[11px] text-slate-400 mt-0.5">dari total 0.0 GB</p>
+            </div>
+            <div class="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-300 flex items-center justify-center text-xl border border-purple-500/30 shadow-lg">
+              <i class="fa-solid fa-hard-drive"></i>
+            </div>
+          </div>
+          <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-3 border border-slate-800">
+            <div id="vpsDiskBar" class="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full w-[0%]"></div>
+          </div>
+        </div>
+
+        <!-- Bot Storage Usage Card -->
+        <div class="glass-card p-5 rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-indigo-300 uppercase tracking-wider">Total File Bot VPS</p>
+              <h3 id="vpsBotTotal" class="text-2xl font-black text-white mt-1">0.0 MB</h3>
+              <p id="vpsBotBreakdown" class="text-[11px] text-slate-400 mt-0.5">Temp: 0MB | Klip: 0MB</p>
+            </div>
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-xl border border-indigo-500/30 shadow-lg">
+              <i class="fa-solid fa-database"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Maintenance Card -->
+        <div class="glass-card p-5 rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-slate-900 via-emerald-950/20 to-slate-900 flex flex-col justify-between">
+          <div>
+            <p class="text-xs font-semibold text-emerald-300 uppercase tracking-wider">Pembersihan Cepat</p>
+            <p class="text-xs text-slate-300 mt-1">Hapus sisa cache temporary di VPS tanpa menghapus hasil klip.</p>
+          </div>
+          <button onclick="cleanVpsTemp()" class="mt-3 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all">
+            <i class="fa-solid fa-broom"></i>
+            <span>🧹 Bersihkan Cache Temp VPS</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- SOURCE VIDEOS MEDIA LIBRARY TABLE -->
+      <div class="glass-card rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+        <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-film text-purple-400"></i>
+            <h3 class="text-sm font-bold text-white">Perpustakaan Video Source VPS</h3>
+          </div>
+          <button onclick="loadVpsStorage()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all flex items-center gap-1.5 border border-slate-700">
+            <i class="fa-solid fa-rotate text-purple-400"></i>
+            <span>Refresh Storage</span>
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase font-semibold border-b border-slate-800 text-[11px] tracking-wider">
+              <tr>
+                <th class="p-3.5">Video / ID</th>
+                <th class="p-3.5">Ukuran di VPS</th>
+                <th class="p-3.5">Jumlah Klip</th>
+                <th class="p-3.5">Status Bot</th>
+                <th class="p-3.5 text-right">Aksi VPS</th>
+              </tr>
+            </thead>
+            <tbody id="vpsVideosTableBody" class="divide-y divide-slate-800/60 text-slate-200 font-medium">
+              <tr>
+                <td colspan="5" class="py-12 text-center text-slate-500">
+                  <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-purple-500"></i>
+                  <p>Menganalisa storage VPS...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
 
   </main>
@@ -601,25 +693,170 @@ v>
       }
     }
 
-    // Helper Toast Notification
-    function showToast(message, type = 'info') {
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-indigo-600';
-      const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+    function setFilter(filter) {
+      currentFilter = filter;
+      switchMainView('CLIPS');
+      ['READY', 'POSTED', 'ALL'].forEach(f => {
+        const btn = document.getElementById(`tab${f}`);
+        if (btn) {
+          if (f === filter) {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow-sm';
+          } else {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+          }
+        }
+      });
+      loadDashboard();
+    }
 
-      toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0`;
-      toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span>${message}</span>`;
+    function switchMainView(viewName) {
+      const clipsGrid = document.getElementById('clipsGrid');
+      const vpsStorage = document.getElementById('vpsStorageContainer');
+      const vpsTab = document.getElementById('tabVPS_STORAGE');
 
-      container.appendChild(toast);
-      setTimeout(() => {
-        toast.classList.remove('translate-y-2', 'opacity-0');
-      }, 10);
+      if (viewName === 'VPS_STORAGE') {
+        if (clipsGrid) clipsGrid.classList.add('hidden');
+        if (vpsStorage) vpsStorage.classList.remove('hidden');
+        if (vpsTab) {
+          vpsTab.className = 'px-3.5 py-1.5 rounded-lg text-xs font-extrabold text-white transition-all bg-purple-600 border border-purple-400 flex items-center gap-1.5 shadow-lg shadow-purple-600/30';
+        }
+        ['READY', 'POSTED', 'ALL'].forEach(f => {
+          const btn = document.getElementById(`tab${f}`);
+          if (btn) btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        });
+        loadVpsStorage();
+      } else {
+        if (clipsGrid) clipsGrid.classList.remove('hidden');
+        if (vpsStorage) vpsStorage.classList.add('hidden');
+        if (vpsTab) {
+          vpsTab.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold text-purple-300 hover:text-white transition-all bg-purple-950/60 border border-purple-500/40 flex items-center gap-1.5 shadow-sm';
+        }
+      }
+    }
 
-      setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-y-2');
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
+    async function loadVpsStorage() {
+      const tableBody = document.getElementById('vpsVideosTableBody');
+      if (!tableBody) return;
+
+      try {
+        const res = await fetch('/api/vps/storage');
+        if (!res.ok) throw new Error('Gagal mengambil data storage VPS');
+        const data = await res.json();
+
+        document.getElementById('vpsDiskFree').textContent = `${data.disk_free_gb} GB`;
+        document.getElementById('vpsDiskTotal').textContent = `dari total ${data.disk_total_gb} GB`;
+        document.getElementById('vpsBotTotal').textContent = `${data.bot_total_mb} MB`;
+        document.getElementById('vpsBotBreakdown').textContent = `Temp: ${data.bot_temp_mb} MB | Klip: ${data.bot_clips_mb} MB`;
+        
+        const usedPct = Math.min(100, Math.round(((data.disk_total_gb - data.disk_free_gb) / data.disk_total_gb) * 100));
+        document.getElementById('vpsDiskBar').style.width = `${usedPct}%`;
+
+        if (!data.videos || data.videos.length === 0) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" class="py-12 text-center text-slate-500">
+                <i class="fa-solid fa-folder-open text-3xl mb-2 text-slate-600"></i>
+                <p class="text-sm font-medium">Belum ada video source yang di-download di VPS.</p>
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tableBody.innerHTML = data.videos.map(v => {
+          const statusBadge = v.status === 'COMPLETED' 
+            ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">SUKSES</span>`
+            : v.status === 'PROCESSING'
+            ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 animate-pulse">PROSES</span>`
+            : v.status === 'FAILED'
+            ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">GAGAL</span>`
+            : `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">IDLE</span>`;
+
+          const totalMb = (v.total_source_mb + v.clips_total_mb).toFixed(1);
+
+          return `
+            <tr class="hover:bg-slate-900/60 transition-colors">
+              <td class="p-3.5">
+                <div class="font-bold text-white max-w-xs truncate" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</div>
+                <div class="text-[11px] text-purple-400 font-mono flex items-center gap-1.5 mt-0.5">
+                  <i class="fa-brands fa-youtube text-red-500"></i>
+                  <a href="${escapeHtml(v.url)}" target="_blank" class="hover:underline">${escapeHtml(v.video_id)}</a>
+                </div>
+              </td>
+              <td class="p-3.5">
+                <div class="font-bold text-slate-200">${totalMb} MB</div>
+                <div class="text-[10px] text-slate-400">Source: ${v.total_source_mb}MB | Clips: ${v.clips_total_mb}MB</div>
+              </td>
+              <td class="p-3.5">
+                <span class="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 font-bold border border-indigo-500/20">${v.clips_count} Klip</span>
+              </td>
+              <td class="p-3.5">
+                ${statusBadge}
+              </td>
+              <td class="p-3.5 text-right space-x-1.5">
+                <button 
+                  onclick="regenerateVpsClip('${v.video_id}')" 
+                  class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1"
+                  title="Generate klip langsung dari cache VPS tanpa re-download"
+                >
+                  <i class="fa-solid fa-bolt text-yellow-300"></i>
+                  <span>Generate Klip</span>
+                </button>
+
+                <button 
+                  onclick="deleteVpsVideo('${v.video_id}')" 
+                  class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800 font-bold text-xs transition-all inline-flex items-center gap-1"
+                  title="Hapus video & klip ini serta kosongkan storage VPS"
+                >
+                  <i class="fa-regular fa-trash-can text-rose-400"></i>
+                  <span>Hapus</span>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+      } catch (err) {
+        showToast(err.message || 'Gagal memuat storage VPS', 'error');
+      }
+    }
+
+    async function regenerateVpsClip(videoId) {
+      try {
+        const res = await fetch(`/api/vps/regenerate-clip/${videoId}`, { method: 'POST' });
+        if (!res.ok) throw new Error('Gagal memulai re-generasi klip');
+        const data = await res.json();
+        showToast(data.message || 'Re-generasi klip dimulai!', 'success');
+        openProgressModal(videoId);
+      } catch (err) {
+        showToast(err.message || 'Gagal meregenerasi klip', 'error');
+      }
+    }
+
+    async function deleteVpsVideo(videoId) {
+      if (!confirm(`Apakah Anda yakin ingin menghapus Video ID '${videoId}' dan SELURUH file klipnya di VPS?\n\nFile di disk VPS dan data database akan langsung dibersihkan.`)) return;
+      try {
+        const res = await fetch(`/api/vps/video/${videoId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Gagal menghapus video dari VPS');
+        const data = await res.json();
+        showToast(`🎉 ${data.message}`, 'success');
+        loadVpsStorage();
+        loadDashboard();
+      } catch (err) {
+        showToast(err.message || 'Gagal menghapus video', 'error');
+      }
+    }
+
+    async function cleanVpsTemp() {
+      try {
+        const res = await fetch('/api/vps/clean-temp', { method: 'POST' });
+        if (!res.ok) throw new Error('Gagal membersihkan cache temp');
+        const data = await res.json();
+        showToast(`🧹 ${data.message}`, 'success');
+        loadVpsStorage();
+      } catch (err) {
+        showToast(err.message || 'Gagal membersihkan cache temp', 'error');
+      }
     }
 
     let progressInterval = null;

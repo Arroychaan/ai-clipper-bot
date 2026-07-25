@@ -263,6 +263,84 @@ def api_set_mode(payload: ModePayload):
     return {"status": "success", "mode": target_mode}
 
 
+# --- VPS MEDIA STORAGE MANAGER REST API ENDPOINTS ---
+
+@app.get("/api/vps/storage")
+def api_get_vps_storage():
+    """Returns VPS storage statistics and list of source videos/clips."""
+    from core.db_manager import get_vps_storage_info
+    return get_vps_storage_info()
+
+
+@app.delete("/api/vps/video/{video_id}")
+def api_delete_vps_video(video_id: str):
+    """
+    Deletes all temporary source files and clips for video_id from disk
+    and purges database records, freeing VPS storage immediately!
+    """
+    from core.db_manager import delete_vps_source_video
+    result = delete_vps_source_video(video_id)
+    return {
+        "status": "success",
+        "message": f"Berhasil menghapus video ID '{video_id}' dan membebaskan {result['freed_mb']} MB storage VPS!",
+        "result": result
+    }
+
+
+@app.post("/api/vps/regenerate-clip/{video_id}")
+def api_regenerate_vps_clip(video_id: str, background_tasks: BackgroundTasks):
+    """
+    Triggers instant clip re-generation from the cached source video on VPS
+    without re-downloading from YouTube!
+    """
+    clean_url = f"https://www.youtube.com/watch?v={video_id}"
+    from core.db_manager import mark_status, add_system_log
+    mark_status(video_id, "PROCESSING")
+    add_system_log(video_id, "INFO", "[STEP 1/6]", f"Memulai re-generasi klip instan untuk video ID '{video_id}' di VPS")
+
+    def _run_regen():
+        try:
+            from main import process_single_video
+            from core.groq_manager import ResilientGroqClient
+            from core.db_manager import get_setting
+            groq_client = ResilientGroqClient()
+            active_mode = get_setting("active_mode", "WINDAH")
+            item = {"id": video_id, "video_id": video_id, "title": f"Cached VOD ({video_id})", "url": clean_url}
+            process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
+        except Exception as e:
+            import traceback
+            tb_str = traceback.format_exc()
+            add_system_log(video_id, "ERROR", "FAILED", f"Re-generation failed: {str(e)}", tb_str)
+            mark_status(video_id, "FAILED", error_message=f"{str(e)}\n\nTraceback:\n{tb_str}")
+
+    background_tasks.add_task(_run_regen)
+    return {"message": f"Re-generasi klip untuk Video ID '{video_id}' berhasil masuk antrean!", "video_id": video_id}
+
+
+@app.post("/api/vps/clean-temp")
+def api_clean_vps_temp():
+    """Cleans all temporary files in temp/ directory to free up disk space while preserving clips."""
+    from config import TEMP_DIR
+    import os
+    freed_bytes = 0
+    deleted_count = 0
+    if os.path.exists(TEMP_DIR):
+        for f in os.listdir(TEMP_DIR):
+            fp = os.path.join(TEMP_DIR, f)
+            if os.path.isfile(fp):
+                sz = os.path.getsize(fp)
+                try:
+                    os.remove(fp)
+                    freed_bytes += sz
+                    deleted_count += 1
+                except Exception:
+                    pass
+
+    freed_mb = round(freed_bytes / (1024 * 1024), 2)
+    return {"message": f"Berhasil membersihkan {deleted_count} file temp dan membebaskan {freed_mb} MB!", "freed_mb": freed_mb}
+
+
+
 # --- ADMIN LOG INSPECTOR API ENDPOINTS ---
 
 @app.get("/api/admin/logs")
