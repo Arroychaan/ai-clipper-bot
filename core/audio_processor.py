@@ -370,15 +370,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_ts = _format_ass_timestamp(w_start)
             end_ts = _format_ass_timestamp(w_end)
 
-            # Active Word: Neon Yellow (&H003BEEFF&) + 115% Zoom Pop
+            # Active Word: Neon Yellow (&H003BEEFF&) + 130% Kinetic Spring Bouncy Pop (\t(0,120,\fscx100\fscy100))
             # Passive Word: Crisp White (&H00FFFFFF&)
             formatted = []
             for idx, item in enumerate(phrase):
                 text_val = item["word"]
                 if idx == w_idx:
-                    formatted.append(f"{{\\c&H003BEEFF&\\fscx115\\fscy115}}{text_val}{{\\r}}")
+                    formatted.append(f"{{\\c&H003BEEFF&\\fscx130\\fscy130\\t(0,120,\\fscx100\\fscy100)}}{text_val}{{\\r}}")
                 else:
                     formatted.append(text_val)
+
 
             line_str = " ".join(formatted)
             dialogue_lines.append(f"Dialogue: 0,{start_ts},{end_ts},TikTokFYP,,0,0,0,,{line_str}")
