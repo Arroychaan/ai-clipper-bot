@@ -342,7 +342,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: TikTokFYP, Arial, 78, &H00FFFFFF, &H003BEEFF, &H00000000, &H96000000, -1, 0, 0, 0, 100, 100, 2, 0, 1, 6, 4, 2, 40, 40, 420, 1
+Style: TikTokFYP, Arial, 82, &H00FFFFFF, &H0066FF00, &H00000000, &H96000000, -1, -1, 0, 0, 100, 100, 2, 0, 1, 7, 4, 2, 40, 40, 920, 1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -370,15 +370,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_ts = _format_ass_timestamp(w_start)
             end_ts = _format_ass_timestamp(w_end)
 
-            # Active Word: Neon Yellow (&H003BEEFF&) + 130% Kinetic Spring Bouncy Pop (\t(0,120,\fscx100\fscy100))
+            # Active Word: Neon Green (#00FF66 / &H0066FF00&) + 130% Kinetic Spring Bouncy Pop (\t(0,120,\fscx100\fscy100))
             # Passive Word: Crisp White (&H00FFFFFF&)
             formatted = []
             for idx, item in enumerate(phrase):
                 text_val = item["word"]
                 if idx == w_idx:
-                    formatted.append(f"{{\\c&H003BEEFF&\\fscx130\\fscy130\\t(0,120,\\fscx100\\fscy100)}}{text_val}{{\\r}}")
+                    formatted.append(f"{{\\c&H0066FF00&\\fscx130\\fscy130\\t(0,120,\\fscx100\\fscy100)}}{text_val}{{\\r}}")
                 else:
                     formatted.append(text_val)
+
 
 
             line_str = " ".join(formatted)

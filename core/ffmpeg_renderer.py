@@ -120,11 +120,11 @@ def render_gaming_split_shorts(
     fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
     cw, ch, cx, cy = fc.get("crop_w", 640), fc.get("crop_h", 480), fc.get("crop_x", 0), fc.get("crop_y", 0)
 
-    # 1. Top Stream: Streamer Facecam cropped & scaled to 1080x960
-    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale={TARGET_WIDTH}:960:force_original_aspect_ratio=increase,crop={TARGET_WIDTH}:960[top]"
+    # 1. Top Stream (1080x960): Gameplay Stream scaled & cropped to 1080x960
+    top_filter = "[0:v]scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[top]"
 
-    # 2. Bottom Stream: Gameplay 16:9 center cropped & scaled to 1080x960
-    bottom_filter = f"[0:v]scale=-1:960,crop={TARGET_WIDTH}:960[bottom]"
+    # 2. Bottom Stream (1080x960): Streamer Facecam cropped from coordinates & scaled to 1080x960
+    bottom_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=1080:-1:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -135,16 +135,17 @@ def render_gaming_split_shorts(
         "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill[base]"
     )
 
-    # 5. Burn-in Subtitles on gameplay area if provided
+    # 5. Burn-in Subtitles on center divider boundary if provided
     if subtitle_path and os.path.exists(subtitle_path):
         escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
         if subtitle_path.endswith(".ass"):
             final_sub_filter = f"[base]ass='{escaped_sub_path}'[outv]"
         else:
-            sub_style = "Fontsize=24,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,Bold=1,Alignment=2,MarginV=180"
+            sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=900"
             final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
     else:
-        final_sub_filter = "[base]null[outv]"
+        final_sub_filter = "[base]null,fps=60[outv]"
+
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
 
