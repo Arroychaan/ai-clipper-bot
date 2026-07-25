@@ -27,24 +27,16 @@ def render_vertical_shorts(
     subtitle_path: Optional[str] = None
 ) -> bool:
     """
-    Renders a 9:16 vertical video clip using a 1-pass CPU FFmpeg filtergraph.
-    
-    Layout:
-    - Background: Original video scaled to fill 1080x1920 with heavy boxblur (25:10).
-    - Foreground: Original video scaled to 1080px width centered vertically with burned-in subtitles.
-    
-    Args:
-        input_video: Path to source MP4 video stream.
-        start_time: Clip start timestamp in seconds.
-        duration: Duration of clip in seconds.
-        output_path: Target path for output MP4 file.
-        subtitle_path: Optional path to .srt file to burn into video foreground.
-        
-    Returns:
-        bool: True if render succeeded, False otherwise.
+    Renders a 100% Full-Screen 9:16 Vertical Short (1080x1920).
+    HARAM LETTERBOX / HARAM BLURRED BARS / HARAM WIDE SHOT!
+    Uses Podcast 2-Stack Split-Screen Crop:
+    - TOP HALF (1080x960): Left Speaker (Host) cropped tight & centered.
+    - BOTTOM HALF (1080x960): Right Speaker (Guest) cropped tight & centered.
+    - DIVIDER: Sleek glassmorphic neon cyan accent divider line between top and bottom.
+    - CANVAS: 100% Filled 1080x1920 screen (Zero letterbox, Zero blurred bars).
     """
     logger.info(
-        "Rendering vertical 9:16 video (Start: %.2fs, Duration: %.2fs) -> %s",
+        "Rendering 100% Full-Screen Podcast Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
         start_time, duration, output_path
     )
 
@@ -52,34 +44,22 @@ def render_vertical_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # Base filter graph for background and foreground overlay
-    bg_filter = (
-        f"[0:v]scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={TARGET_WIDTH}:{TARGET_HEIGHT},boxblur=25:10[bg]"
-    )
-    
-    # Subtitle burn-in filter on foreground stream if provided
-    if subtitle_path and os.path.exists(subtitle_path):
-        escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
-        if subtitle_path.endswith(".ass"):
-            fg_filter = (
-                f"[0:v]scale={TARGET_WIDTH}:-1,"
-                f"ass='{escaped_sub_path}'[fg]"
-            )
-        else:
-            sub_style = (
-                "Fontsize=22,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,"
-                "BackColour=&H80000000&,Bold=1,Alignment=2,MarginV=120"
-            )
-            fg_filter = (
-                f"[0:v]scale={TARGET_WIDTH}:-1,"
-                f"subtitles='{escaped_sub_path}':force_style='{sub_style}'[fg]"
-            )
-    else:
-        fg_filter = f"[0:v]scale={TARGET_WIDTH}:-1[fg]"
+    # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to 1080x960
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=-1:960,crop=1080:960[top]"
 
-    overlay_filter = "[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=60[outv]"
-    filter_complex = f"{bg_filter}; {fg_filter}; {overlay_filter}"
+    # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to 1080x960
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=-1:960,crop=1080:960[bottom]"
+
+    # 3. Stack Top & Bottom Vertically (Total 1080x1920 canvas)
+    stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
+
+    # 4. Draw sleek glassmorphic neon divider accent line at center Y=956..960
+    divider_filter = (
+        "[stacked]drawbox=y=956:color=cyan@0.8:width=iw:height=8:t=fill,"
+        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill,fps=60[outv]"
+    )
+
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -97,7 +77,8 @@ def render_vertical_shorts(
         output_path
     ]
 
-    logger.info("Executing FFmpeg Full HD 60fps render command...")
+    logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg 60fps render command...")
+
     try:
         process = subprocess.run(
             cmd,
