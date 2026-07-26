@@ -115,8 +115,9 @@ def process_single_video(
                 err_msg = f"Gagal mengunduh/transkrip audio: {str(audio_err)}"
                 logger.warning(err_msg)
                 add_system_log(video_id, "ERROR", "[STEP 2/6]", err_msg, tb_audio)
-                mark_status(video_id, "FAILED", error_message=f"{err_msg}\n\nTraceback:\n{tb_audio}")
-                return         # 3. Extract multiple viral clips (5 to 20 clips) via Groq Llama 3.3 70B
+                return False
+
+        # 3. Extract multiple viral clips (5 to 20 clips) via Groq Llama 3.3 70B
         msg_ai = "Mengevaluasi & mengekstrak 5-20 momen klip viral terbaik (Skor >= 95) via Groq Llama 3.3 70B..."
         logger.info("👉 [STEP 3/6] %s", msg_ai)
         add_system_log(video_id, "INFO", "[STEP 3/6]", msg_ai)
@@ -255,13 +256,6 @@ def main_loop() -> None:
     init_db()
 
     groq_client = ResilientGroqClient()
-
-def main_loop() -> None:
-    """Main infinite operational loop for 24/7 autonomous deployment."""
-    logger.info("Initializing 24/7 AI Clipper Engine...")
-    init_db()
-
-    groq_client = ResilientGroqClient()
     logger.info("Bot engine operational! Entering 24/7 infinite clipping loop...")
 
     last_mode = None
@@ -280,9 +274,9 @@ def main_loop() -> None:
                 logger.info("🎮 [WINDAH GAMING MODE ACTIVE] Mode 1 Auto-feed STOPPED. Checking for manual YouTube URL inputs...")
                 videos = get_unprocessed_custom_candidates()
             else:
-                feed_url = ",".join(PODCAST_FEEDS)
+                feed_url = SOURCE_FEED_URL
                 force_gaming = False
-                logger.info("🎙️ [PODCAST MODE ACTIVE] Fetching latest feeds from 9 Podcast channels...")
+                logger.info("🎙️ [PODCAST MODE ACTIVE] Fetching latest feeds from configured Podcast channels...")
                 videos = YouTubeFetcher.get_latest_videos(feed_url)
 
 

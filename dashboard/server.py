@@ -24,7 +24,8 @@ from config import (
     CLIPS_DIR,
     DASHBOARD_HOST,
     DASHBOARD_PORT,
-    DASHBOARD_PASSWORD
+    DASHBOARD_PASSWORD,
+    LOG_FILE_PATH
 )
 from core.db_manager import (
     init_db,
@@ -36,7 +37,6 @@ from core.db_manager import (
     get_setting,
     set_setting
 )
-from pydantic import BaseModel
 
 
 app = FastAPI(title="AI Clipper Bot PWA Dashboard", version="2.0.0")
@@ -304,7 +304,7 @@ def api_regenerate_vps_clip(video_id: str, background_tasks: BackgroundTasks):
             from core.groq_manager import ResilientGroqClient
             from core.db_manager import get_setting
             groq_client = ResilientGroqClient()
-            active_mode = get_setting("active_mode", "WINDAH")
+            active_mode = get_setting("active_mode", "PODCAST")
             item = {"id": video_id, "video_id": video_id, "title": f"Cached VOD ({video_id})", "url": clean_url}
             process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
         except Exception as e:

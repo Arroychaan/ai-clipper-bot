@@ -148,7 +148,7 @@ def get_unprocessed_custom_candidates() -> list[dict]:
             SELECT c.video_id, c.title, c.url 
             FROM candidate_videos c
             LEFT JOIN processed_videos p ON c.video_id = p.video_id
-            WHERE p.video_id IS NULL OR p.status NOT IN ('COMPLETED', 'FAILED')
+            WHERE p.video_id IS NULL
             ORDER BY c.created_at ASC
             """
         )

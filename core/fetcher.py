@@ -100,6 +100,22 @@ def _parse_srt_to_transcript(srt_text: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def is_valid_mp4_video(file_path: str) -> bool:
+    """Verifies that an MP4 video file exists, is non-zero, and readable (no 'moov atom not found')."""
+    if not os.path.exists(file_path) or os.path.getsize(file_path) < 100000:
+        return False
+    try:
+        import cv2  # type: ignore
+        cap = cv2.VideoCapture(file_path)
+        if not cap.isOpened():
+            return False
+        ret, frame = cap.read()
+        cap.release()
+        return ret and frame is not None
+    except Exception:
+        return False
+
+
 class YouTubeFetcher:
     """Class wrapper for fetching metadata and streams from YouTube — 5-Layer Anti-Bot Defense."""
 
@@ -460,22 +476,6 @@ class YouTubeFetcher:
     # -------------------------------------------------------------------------
     # VIDEO STREAM DOWNLOAD — 5-Layer Defense
     # -------------------------------------------------------------------------
-
-def is_valid_mp4_video(file_path: str) -> bool:
-    """Verifies that an MP4 video file exists, is non-zero, and readable (no 'moov atom not found')."""
-    if not os.path.exists(file_path) or os.path.getsize(file_path) < 100000:
-        return False
-    try:
-        import cv2  # type: ignore
-        cap = cv2.VideoCapture(file_path)
-        if not cap.isOpened():
-            return False
-        ret, frame = cap.read()
-        cap.release()
-        return ret and frame is not None
-    except Exception:
-        return False
-
 
     @staticmethod
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
