@@ -161,6 +161,17 @@ def process_single_video(
             add_system_log(video_id, "INFO", "[STEP 5/6]", msg_dl)
             video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
+            # Auto Video Stream Integrity Check (pre-render verification)
+            from core.fetcher import is_valid_mp4_video
+            if not is_valid_mp4_video(video_path):
+                logger.warning("⚠️ Corrupted MP4 video stream detected ('moov atom not found'). Removing and re-downloading fresh stream...")
+                if os.path.exists(video_path):
+                    try:
+                        os.remove(video_path)
+                    except Exception:
+                        pass
+                video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
+
             # 6. Render Full HD 9:16 vertical short
             clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
             output_clip_path = str(CLIPS_DIR / clip_filename)

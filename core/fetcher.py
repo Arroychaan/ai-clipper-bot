@@ -461,6 +461,22 @@ class YouTubeFetcher:
     # VIDEO STREAM DOWNLOAD — 5-Layer Defense
     # -------------------------------------------------------------------------
 
+def is_valid_mp4_video(file_path: str) -> bool:
+    """Verifies that an MP4 video file exists, is non-zero, and readable (no 'moov atom not found')."""
+    if not os.path.exists(file_path) or os.path.getsize(file_path) < 100000:
+        return False
+    try:
+        import cv2  # type: ignore
+        cap = cv2.VideoCapture(file_path)
+        if not cap.isOpened():
+            return False
+        ret, frame = cap.read()
+        cap.release()
+        return ret and frame is not None
+    except Exception:
+        return False
+
+
     @staticmethod
     def download_video_stream(youtube_url: str, start_sec: Optional[float] = None, end_sec: Optional[float] = None) -> str:
         """
@@ -477,6 +493,17 @@ class YouTubeFetcher:
 
         start_s = max(0.0, float(start_sec or 0.0))
         dur_s = max(10.0, float(end_sec or 30.0) - start_s) if end_sec else None
+
+        if os.path.exists(output_path):
+            if is_valid_mp4_video(output_path):
+                logger.info("✅ Verified valid video stream in temp: %s", output_path)
+                return output_path
+            else:
+                logger.warning("⚠️ Corrupted MP4 file detected in temp ('moov atom not found' or unreadable). Purging: %s", output_path)
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
 
         logger.info("🎬 Downloading video stream (Start: %.1fs, Duration: %s) -> %s",
                     start_s, f"{dur_s:.1f}s" if dur_s else "FULL", output_path)
