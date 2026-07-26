@@ -144,8 +144,8 @@ class ResilientGroqClient:
 Your task is to analyze the speech transcript with timestamps and select the SINGLE MOST VIRAL, COMPLETE STORY/JOKE SEGMENT.
 
 CRITICAL FYP RETENTION RULES:
-1. NEVER TRUNCATE OR CUT OFF MID-SENTENCE! The start_time MUST begin at the exact start of an engaging sentence, and end_time MUST conclude AFTER the full joke punchline or streamer's reaction laughter is completely delivered.
-2. Duration MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds.
+1. STRICT DURATION: Each clip MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds (MINIMUM 60 seconds, MAXIMUM 90 seconds).
+2. COMPLETE STORY/COMEDIC ARC: The start_time MUST begin at the exact start of a sentence/setup, and end_time MUST conclude AFTER the full punchline, scream, or reaction laughter is completely finished. NEVER cut off mid-sentence, mid-joke, or before the reaction ends!
 3. Calculate 'viral_score' (integer 1-100) evaluating hook strength (first 3s), curiosity gap, emotional peak, and punchline payoff.
 4. Generate 'title': Short clickbait viral title (under 50 chars) {lang_instruction}.
 5. Generate 'caption': Short 1-2 line aesthetic caption {lang_instruction}.
@@ -155,7 +155,7 @@ OUTPUT JSON FORMAT ONLY:
 {{
   "viral_score": 95,
   "start_time": 120.5,
-  "end_time": 155.0,
+  "end_time": 185.0,
   "title": "Viral Clickbait Title",
   "caption": "Short aesthetic caption.",
   "hashtags": ["#fyp", "#viral", "#shorts"]
@@ -256,8 +256,8 @@ Your task is to analyze the full transcript with timestamps and extract ALL TOP 
 STRICT CRITERIA & RULES:
 1. SCORE THRESHOLD: EVERY clip MUST have a 'viral_score' >= 95! Only select truly elite, high-retention, funny, dramatic, or mind-blowing moments.
 2. COMPLETE COMEDIC STORY ARCS & PUNCHLINES: Each clip MUST start at the setup phase of a story/joke and MUST end AFTER the full punchline, scream, or laughter reaction is complete. NEVER cut off mid-sentence or before the reaction ends.
-3. NO OVERLAPPING CLIPS: Ensure extracted clip time ranges do not heavily overlap (at least 20 seconds apart).
-4. DURATION: Each clip MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds long.
+3. NO OVERLAPPING CLIPS: Ensure extracted clip time ranges do not heavily overlap (at least 30 seconds apart).
+4. STRICT DURATION: Each clip MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds long (MINIMUM 60.0s, MAXIMUM 90.0s).
 5. Provide: 'title' (short clickbait under 50 chars), 'caption' (1-2 line aesthetic caption {lang_instruction}), and 'hashtags' (4-6 trending tags).
 
 OUTPUT MUST BE A STRICT JSON OBJECT CONTAINING A "clips" ARRAY:
@@ -266,7 +266,7 @@ OUTPUT MUST BE A STRICT JSON OBJECT CONTAINING A "clips" ARRAY:
     {{
       "viral_score": 98,
       "start_time": 120.5,
-      "end_time": 155.0,
+      "end_time": 185.0,
       "title": "Viral Moment 1 Title",
       "caption": "Short aesthetic caption.",
       "hashtags": ["#fyp", "#viral", "#shorts"]
