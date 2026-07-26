@@ -146,6 +146,25 @@
   <!-- MAIN CONTAINER -->
   <main class="max-w-7xl mx-auto px-4 pt-6 flex-1 w-full space-y-6">
 
+    <!-- ACTIVE PROCESS FLOATING MONITOR BANNER (RE-OPEN DEBUGGER MODAL ANYTIME) -->
+    <div id="activeProcessBanner" class="hidden glass-card p-3.5 rounded-2xl border border-purple-500/40 bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 shadow-xl flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center text-base border border-purple-500/40 shadow-inner shrink-0">
+          <i class="fa-solid fa-spinner animate-spin"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-white flex items-center gap-2">
+            <span>⚡ Video ID: <span id="bannerVideoId" class="text-purple-300 font-mono font-bold">-</span> sedang diproses di VPS!</span>
+          </p>
+          <p id="bannerStepMessage" class="text-[11px] text-slate-300 font-mono mt-0.5">[STEP 1/6] Inisialisasi pemrosesan...</p>
+        </div>
+      </div>
+      <button onclick="reopenActiveProgressModal()" class="w-full md:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all shrink-0">
+        <i class="fa-solid fa-bug text-yellow-300"></i>
+        <span>🔍 Buka Live Debugger / Log</span>
+      </button>
+    </div>
+
     <!-- WAYIN AI INSTANT YOUTUBE URL CLIPPER BAR (WINDAH GAMING MANUAL MODE ONLY) -->
     <div id="customUrlBarContainer" class="hidden glass-card p-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-slate-900/60 shadow-xl">
       <div class="flex flex-col md:flex-row items-center gap-3">
@@ -160,7 +179,6 @@
         </button>
       </div>
     </div>
-v>
 
     <!-- STATS SUMMARY CARDS -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -334,18 +352,6 @@ v>
     </div>
 
   </main>
-
-  <!-- FLOATING PERSISTENT PROGRESS WIDGET BUTTON -->
-  <div id="floatingProgressWidget" class="hidden fixed bottom-6 left-6 z-40 animate-bounce">
-    <button onclick="reopenActiveProgressModal()" class="px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white text-xs font-extrabold shadow-2xl border border-purple-400/50 flex items-center gap-2.5 transition-all">
-      <i class="fa-solid fa-spinner animate-spin text-base text-yellow-300"></i>
-      <div class="text-left">
-        <div class="text-[10px] text-purple-200 uppercase font-mono tracking-wider">Proses Sedang Berjalan</div>
-        <div class="text-xs font-black"><span id="floatingWidgetVideoId">ID</span> (<span id="floatingWidgetPercent">15%</span>)</div>
-      </div>
-      <i class="fa-solid fa-up-right-and-down-left-from-center text-xs ml-1 text-cyan-200"></i>
-    </button>
-  </div>
 
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
@@ -786,16 +792,6 @@ v>
 
           const totalMb = (v.total_source_mb + v.clips_total_mb).toFixed(1);
 
-          const actionBtn = v.status === 'PROCESSING'
-            ? `<button onclick="openProgressModal('${v.video_id}')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1.5 animate-pulse" title="Lihat progress pemrosesan live">
-                <i class="fa-solid fa-spinner animate-spin text-yellow-300"></i>
-                <span>Lihat Progress</span>
-               </button>`
-            : `<button onclick="regenerateVpsClip('${v.video_id}')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1" title="Generate klip langsung dari cache VPS tanpa re-download">
-                <i class="fa-solid fa-bolt text-yellow-300"></i>
-                <span>Generate Klip</span>
-               </button>`;
-
           return `
             <tr class="hover:bg-slate-900/60 transition-colors">
               <td class="p-3.5">
@@ -815,8 +811,24 @@ v>
               <td class="p-3.5">
                 ${statusBadge}
               </td>
-              <td class="p-3.5 text-right space-x-1.5">
-                ${actionBtn}
+              <td class="p-3.5 text-right space-x-1 border-slate-800">
+                <button 
+                  onclick="openProgressModal('${v.video_id}')" 
+                  class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 font-bold text-xs border border-slate-700 transition-all inline-flex items-center gap-1"
+                  title="Buka live debugger & log progress untuk video ini"
+                >
+                  <i class="fa-solid fa-bug text-purple-400"></i>
+                  <span>Log</span>
+                </button>
+
+                <button 
+                  onclick="regenerateVpsClip('${v.video_id}')" 
+                  class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1"
+                  title="Generate klip langsung dari cache VPS tanpa re-download"
+                >
+                  <i class="fa-solid fa-bolt text-yellow-300"></i>
+                  <span>Generate Klip</span>
+                </button>
 
                 <button 
                   onclick="deleteVpsVideo('${v.video_id}')" 
@@ -836,12 +848,11 @@ v>
       }
     }
 
-    let activeProcessingVideoId = null;
+    let currentActiveVideoId = null;
 
     async function regenerateVpsClip(videoId) {
-      // 1. OPEN PROGRESS MODAL INSTANTLY!
-      openProgressModal(videoId);
-
+      currentActiveVideoId = videoId;
+      openProgressModal(videoId); // OPEN MODAL IMMEDIATELY ON CLICK!
       try {
         const res = await fetch(`/api/vps/regenerate-clip/${videoId}`, { method: 'POST' });
         if (!res.ok) throw new Error('Gagal memulai re-generasi klip');
@@ -907,21 +918,23 @@ v>
         showToast(data.message || 'Link berhasil dikirim!', 'success');
         input.value = '';
         
+        currentActiveVideoId = data.video_id;
         openProgressModal(data.video_id);
       } catch (err) {
         showToast(err.message || 'Terjadi kesalahan saat memproses link', 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<i class="fa-solid fa-bolt text-yellow-300"></i><span>⚡ Klip Instan Sekarang</span>`;
+        btn.innerHTML = `<i class="fa-solid fa-bolt text-yellow-300"></i><span>⚡ Klip Instan Windah</span>`;
       }
     }
 
     function openProgressModal(videoId) {
-      activeProcessingVideoId = videoId;
+      if (!videoId) return;
+      currentActiveVideoId = videoId;
+
       const modal = document.getElementById('progressModal');
       document.getElementById('progressVideoId').textContent = videoId;
       document.getElementById('progressModalTitle').textContent = 'Memproses Klip Instan...';
-      document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i>`;
       document.getElementById('progressErrorContainer').classList.add('hidden');
       document.getElementById('progressBarFill').style.width = '15%';
       document.getElementById('progressPercentText').textContent = '15%';
@@ -935,34 +948,15 @@ v>
       progressInterval = setInterval(() => pollVideoProgress(videoId), 1500);
     }
 
+    function reopenActiveProgressModal() {
+      if (currentActiveVideoId) {
+        openProgressModal(currentActiveVideoId);
+      }
+    }
+
     function closeProgressModal() {
       document.getElementById('progressModal').classList.add('hidden');
-      if (activeProcessingVideoId) {
-        showFloatingWidget(activeProcessingVideoId, document.getElementById('progressPercentText').textContent);
-      }
-    }
-
-    function reopenActiveProgressModal() {
-      if (activeProcessingVideoId) {
-        openProgressModal(activeProcessingVideoId);
-      }
-    }
-
-    function showFloatingWidget(videoId, percentText) {
-      const widget = document.getElementById('floatingProgressWidget');
-      const vIdSpan = document.getElementById('floatingWidgetVideoId');
-      const pctSpan = document.getElementById('floatingWidgetPercent');
-      if (widget && vIdSpan && pctSpan) {
-        vIdSpan.textContent = videoId;
-        pctSpan.textContent = percentText || '15%';
-        widget.classList.remove('hidden');
-      }
-    }
-
-    function hideFloatingWidget() {
-      const widget = document.getElementById('floatingProgressWidget');
-      if (widget) widget.classList.add('hidden');
-      activeProcessingVideoId = null;
+      if (progressInterval) clearInterval(progressInterval);
     }
 
     async function pollVideoProgress(videoId) {
@@ -976,12 +970,19 @@ v>
         document.getElementById('progressStepText').textContent = data.step || '[STEP 1/6]';
         document.getElementById('progressMessageText').textContent = data.message || 'Memproses...';
 
+        // Update Active Floating Banner
+        const banner = document.getElementById('activeProcessBanner');
+        const bId = document.getElementById('bannerVideoId');
+        const bMsg = document.getElementById('bannerStepMessage');
+
         if (data.status === 'PROCESSING') {
-          activeProcessingVideoId = videoId;
-          showFloatingWidget(videoId, `${data.percent}%`);
-        } else if (data.status === 'COMPLETED') {
+          if (banner) banner.classList.remove('hidden');
+          if (bId) bId.textContent = videoId;
+          if (bMsg) bMsg.textContent = `${data.step || ''}: ${data.message || 'Memproses...'}`;
+        }
+
+        if (data.status === 'COMPLETED') {
           clearInterval(progressInterval);
-          hideFloatingWidget();
           document.getElementById('progressModalTitle').textContent = '🎉 Pemrosesan Selesai!';
           document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 text-xl"></i>`;
           showToast('🎉 Klip instan berhasil dibuat!', 'success');
@@ -989,7 +990,6 @@ v>
           loadVpsStorage();
         } else if (data.status === 'FAILED') {
           clearInterval(progressInterval);
-          hideFloatingWidget();
           document.getElementById('progressModalTitle').textContent = '❌ Pemrosesan Gagal';
           document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-500 text-xl"></i>`;
           document.getElementById('progressErrorContainer').classList.remove('hidden');
