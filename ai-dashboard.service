@@ -9,6 +9,11 @@ WorkingDirectory=/root/ai-clipper-bot
 ExecStart=/root/ai-clipper-bot/venv/bin/python dashboard/server.py
 Restart=always
 RestartSec=5
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+MemoryHigh=1500M
+MemoryMax=1800M
+TasksMax=128
 
 [Install]
 WantedBy=multi-user.target

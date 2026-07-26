@@ -7,6 +7,12 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Enforce strict single-thread execution for OpenMP, OpenBLAS, MKL, NumExpr before importing OpenCV/NumPy
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -47,6 +53,7 @@ TARGET_HEIGHT: int = 1920
 MIN_CLIP_DURATION: float = 60.0
 MAX_CLIP_DURATION: float = 90.0
 MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "95"))
+MINIMUM_FREE_DISK_GB: float = float(os.getenv("MINIMUM_FREE_DISK_GB", "8.0"))
 
 TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "id").lower()  # 'id' for Indonesia, 'en' for Global market
 

@@ -63,6 +63,18 @@ def cleanup_temp_workspace() -> None:
                 logger.warning("Failed to remove temp file '%s': %s", filepath, str(e))
 
 
+def ensure_disk_space(path: str = "/", minimum_gb: float = 8.0) -> None:
+    """Verifies that the VPS has at least minimum_gb free disk space before proceeding."""
+    try:
+        _, _, free = shutil.diskusage(path)
+        free_gb = free / (1024 ** 3)
+        if free_gb < minimum_gb:
+            raise RuntimeError(f"Ruang disk tersisa {free_gb:.1f} GB; minimum yang diperlukan {minimum_gb:.1f} GB.")
+    except Exception as e:
+        if "Ruang disk tersisa" in str(e):
+            raise e
+
+
 def process_single_video(
     video_item: Dict[str, str],
     groq_client: ResilientGroqClient,
@@ -75,6 +87,8 @@ def process_single_video(
     video_id = video_item.get("id") or video_item.get("video_id") or ""
     video_url = video_item["url"]
     video_title = video_item.get("title", "YouTube Video")
+
+    ensure_disk_space("/", MINIMUM_FREE_DISK_GB)
 
     
     logger.info("==================================================")
@@ -173,21 +187,15 @@ def process_single_video(
                         pass
                 video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
 
-            # 6. Render Full HD 9:16 vertical short
+            # 6. Render Full HD 9:16 vertical short using MediaInput explicit pre-sliced tracking
             clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
             output_clip_path = str(CLIPS_DIR / clip_filename)
-            
-            import cv2
-            cap = cv2.VideoCapture(video_path)
-            v_fps = max(1.0, cap.get(cv2.CAP_PROP_FPS))
-            v_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-            v_duration = v_frames / v_fps
-            cap.release()
-
-            render_start_time = 0.0 if (v_duration <= (duration + 60.0) or v_duration < start_sec or v_duration <= 300.0) else start_sec
 
             # Subtitle Burning Disabled per User Directive ("jangan berikan subtitle!")
             sub_ass_path = None
+
+            from core.ffmpeg_renderer import MediaInput, render_gaming_split_shorts, render_vertical_shorts
+            media_input = MediaInput(path=video_path, is_presliced=True, source_start=start_sec)
 
             if force_gaming_mode:
                 msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Wayin.ai Killer HD (Skor {v_score}) -> {clip_filename}..."
@@ -197,8 +205,8 @@ def process_single_video(
                 r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
                 facecam_coords = detect_streamer_facecam(video_path)
                 render_success = render_gaming_split_shorts(
-                    input_video=video_path,
-                    start_time=render_start_time,
+                    input_video=media_input,
+                    start_time=0.0,
                     duration=duration,
                     output_path=output_clip_path,
                     facecam_coords=facecam_coords,
@@ -211,8 +219,8 @@ def process_single_video(
                 logger.info("👉 [STEP 6/6] %s", msg_render)
                 add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
                 render_success = render_vertical_shorts(
-                    input_video=video_path,
-                    start_time=render_start_time,
+                    input_video=media_input,
+                    start_time=0.0,
                     duration=duration,
                     output_path=output_clip_path,
                     subtitle_path=sub_ass_path

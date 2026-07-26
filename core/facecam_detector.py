@@ -13,6 +13,8 @@ from typing import Tuple, Dict, Any, Optional, List
 try:
     import cv2  # type: ignore
     import numpy as np  # type: ignore
+    if cv2 is not None:
+        cv2.setNumThreads(1)
 except ImportError:
     cv2 = None  # type: ignore
     np = None  # type: ignore
