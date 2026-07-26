@@ -191,29 +191,23 @@ def render_gaming_split_shorts(
 
     logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d", in_w, in_h, cw, ch, cx, cy)
 
-    # 1. TOP SECTION (1080x640): Streamer Facecam ONLY cropped tight & scaled to fill top 640px
-    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=640:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:640,unsharp=3:3:0.6:3:3:0.0[top]"
+    # 1. TOP SECTION (1080x800): Streamer Facecam ONLY cropped tight & scaled to fill top 800px 100% (No blur, no padding)
+    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=800:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:800,unsharp=3:3:0.6:3:3:0.0[top]"
 
-    # 2. BOTTOM SECTION BACKGROUND (1080x1280): Video scaled & blurred for ambient padding
-    bot_bg_filter = "[0:v]scale=w=1080:h=1280:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:1280,boxblur=25:5,drawbox=color=black@0.45:width=iw:height=ih:t=fill[bot_bg]"
+    # 2. BOTTOM SECTION (1080x1120): Main Gameplay Stream scaled & cropped to fill bottom 1120px 100% (NO BLUR, NO BARS, NO PADDING!)
+    bottom_filter = "[0:v]scale=w=1080:h=1120:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1120,unsharp=3:3:0.4:3:3:0.0[bottom]"
 
-    # 3. BOTTOM SECTION GAMEPLAY (1080x608): Full 16:9 Uncropped Gameplay Stream (0% side cropping, 100% full game screen & health bars visible!)
-    game_fg_filter = "[0:v]scale=w=1080:h=608:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=3:3:0.4:3:3:0.0[game_fg]"
-
-    # 4. Overlay Uncropped 16:9 Gameplay centered inside Bottom Section (at y=336 relative to bottom)
-    bot_overlay_filter = "[bot_bg][game_fg]overlay=x=0:y=336[bottom]"
-
-    # 5. Stack Top (640px Streamer) & Bottom (1280px Full Game) Vertically -> Total 1080x1920 Canvas
+    # 3. Stack Top (800px Streamer) & Bottom (1120px Gameplay) Vertically -> Total 1080x1920 Canvas
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
 
-    # 6. Sleek Neon Divider Accent Line at boundary between Top Streamer and Bottom Game (Y=640)
+    # 4. Sleek Neon Divider Accent Line at Y=800 boundary between Streamer and Game
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
-        f"[stacked]drawbox=y=636:color={divider_color}:width=iw:height=8:t=fill,"
-        f"drawbox=y=638:color=white@0.95:width=iw:height=4:t=fill[base_div]"
+        f"[stacked]drawbox=y=796:color={divider_color}:width=iw:height=8:t=fill,"
+        f"drawbox=y=798:color=white@0.95:width=iw:height=4:t=fill[base_div]"
     )
 
-    # 7. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
+    # 5. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
     if hook_title and hook_title.strip():
         clean_hook = hook_title.strip().upper().replace("'", "").replace(":", "")[:45]
         hook_banner_filter = (
@@ -223,7 +217,7 @@ def render_gaming_split_shorts(
     else:
         hook_banner_filter = "[base_div]copy[base]"
 
-    # 8. Burn-in Subtitles in bottom section (Y=1600)
+    # 6. Burn-in Subtitles over bottom gameplay section (Y=1700)
     if subtitle_path and os.path.exists(subtitle_path):
         escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
         if subtitle_path.endswith(".ass"):
@@ -234,7 +228,7 @@ def render_gaming_split_shorts(
     else:
         final_sub_filter = "[base]fps=30[outv]"
 
-    filter_complex = f"{top_filter}; {bot_bg_filter}; {game_fg_filter}; {bot_overlay_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}; {final_sub_filter}"
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}; {final_sub_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -271,7 +265,7 @@ def render_gaming_split_shorts(
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback without subtitles...", err_msg)
-        filter_complex_fallback = f"{top_filter}; {bot_bg_filter}; {game_fg_filter}; {bot_overlay_filter}; {stack_filter}; {divider_filter}".replace("[base_div]", "[outv]")
+        filter_complex_fallback = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}".replace("[base_div]", "[outv]")
         fallback_cmd = [
             "ffmpeg", "-y",
             "-ss", f"{start_time:.2f}",
