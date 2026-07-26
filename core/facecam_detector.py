@@ -92,7 +92,9 @@ def detect_streamer_facecam(
         video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
 
         if sample_timestamps_sec is None:
-            sample_timestamps_sec = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0, 75.0]
+            dur = (total_frames / fps) if (total_frames > 0 and fps > 0) else 30.0
+            step = max(0.8, dur / 10.0)
+            sample_timestamps_sec = [round(0.5 + i * step, 1) for i in range(10)]
 
         corner_frames: List[np.ndarray] = []
         dnn_faces: List[Tuple[int, int, int, int, float, str]] = []
@@ -107,7 +109,7 @@ def detect_streamer_facecam(
                     model=model_file,
                     config='',
                     input_size=(video_width, video_height),
-                    score_threshold=0.55,
+                    score_threshold=0.30,
                     nms_threshold=0.3,
                     top_k=1000
                 )
@@ -138,8 +140,8 @@ def detect_streamer_facecam(
                             fc_x = fx + fw // 2
                             fc_y = fy + fh // 2
 
-                            # Filter out faces in central 40% of gameplay screen (game NPCs)
-                            if (0.30 * video_width < fc_x < 0.70 * video_width) and (0.25 * video_height < fc_y < 0.75 * video_height):
+                            # Filter out game character/NPC faces in middle region (must be in outer 4 corners)
+                            if (0.28 * video_width < fc_x < 0.72 * video_width) or (0.28 * video_height < fc_y < 0.72 * video_height):
                                 continue
 
                             pos = "top-left"
