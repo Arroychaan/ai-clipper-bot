@@ -226,14 +226,7 @@ def api_get_video_progress(video_id: str):
     elif "[STEP 3/6]" in step: percent = 50
     elif "[STEP 4/6]" in step: percent = 65
     elif "[STEP 5/6]" in step: percent = 80
-    elif "[STEP 6/6]" in step:
-        percent = 85
-        import re
-        match = re.search(r'\[(\d+)/(\d+)\]', message) or re.search(r'\[(\d+)/(\d+)\]', step)
-        if match:
-            curr_c = int(match.group(1))
-            tot_c = int(match.group(2))
-            percent = int(80 + (curr_c / max(1, tot_c)) * 18)
+    elif "[STEP 6/6]" in step: percent = 95
     elif status == "COMPLETED": percent = 100
     elif status == "FAILED": percent = 100
 

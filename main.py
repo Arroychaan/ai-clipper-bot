@@ -138,8 +138,6 @@ def process_single_video(
 
         # Batch loop through each extracted viral clip candidate
         rendered_count = 0
-        cached_facecam_coords = None
-
         for clip_idx, clip_meta in enumerate(viral_clips, start=1):
             raw_start = clip_meta["start_time"]
             raw_end = clip_meta["end_time"]
@@ -186,7 +184,7 @@ def process_single_video(
             v_duration = v_frames / v_fps
             cap.release()
 
-            render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
+            render_start_time = 0.0 if (v_duration <= (duration + 60.0) or v_duration < start_sec or v_duration <= 300.0) else start_sec
 
             # Subtitle Burning Disabled per User Directive ("jangan berikan subtitle!")
             sub_ass_path = None
@@ -197,10 +195,7 @@ def process_single_video(
                 add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
                 from core.audio_processor import detect_audio_reaction_peaks
                 r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
-                if cached_facecam_coords is None:
-                    logger.info("🧠 Locking streamer facecam coordinates for gaming batch...")
-                    cached_facecam_coords = detect_streamer_facecam(video_path)
-                facecam_coords = cached_facecam_coords
+                facecam_coords = detect_streamer_facecam(video_path)
                 render_success = render_gaming_split_shorts(
                     input_video=video_path,
                     start_time=render_start_time,

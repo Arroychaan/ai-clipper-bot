@@ -19,36 +19,25 @@ def _escape_ffmpeg_path(path: str) -> str:
     return repr(escaped).strip("'")
 
 
-def _get_video_dimensions(video_path: str) -> tuple[int, int]:
-    """Gets exact (width, height) of a video file via OpenCV or ffprobe."""
+def _get_video_info(video_path: str) -> tuple[int, int, float]:
+    """Gets exact (width, height, duration) of a video file via OpenCV or ffprobe."""
+    w, h, dur = 1920, 1080, 0.0
     try:
         import cv2  # type: ignore
         cap = cv2.VideoCapture(video_path)
         if cap.isOpened():
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+            fps = max(1.0, cap.get(cv2.CAP_PROP_FPS) or 30.0)
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+            dur = frames / fps
             cap.release()
             if w > 0 and h > 0:
-                return w, h
+                return w, h, dur
     except Exception:
         pass
 
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=s=x:p=0",
-            video_path
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        if res.returncode == 0 and "x" in res.stdout:
-            parts = res.stdout.strip().split("x")
-            return int(parts[0]), int(parts[1])
-    except Exception:
-        pass
-
-    return 1920, 1080
+    return 1920, 1080, dur
 
 
 def render_vertical_shorts(
@@ -60,21 +49,20 @@ def render_vertical_shorts(
 ) -> bool:
     """
     Renders a 100% Full-Screen 9:16 Vertical Short (1080x1920).
-    HARAM LETTERBOX / HARAM BLURRED BARS / HARAM WIDE SHOT!
-    Uses Podcast 2-Stack Split-Screen Crop:
-    - TOP HALF (1080x960): Left Speaker (Host) cropped tight & centered.
-    - BOTTOM HALF (1080x960): Right Speaker (Guest) cropped tight & centered.
-    - DIVIDER: Sleek glassmorphic neon cyan accent divider line between top and bottom.
-    - CANVAS: 100% Filled 1080x1920 screen (Zero letterbox, Zero blurred bars).
     """
+    if not os.path.exists(input_video):
+        logger.error("Input video file does not exist: %s", input_video)
+        return False
+
+    in_w, in_h, in_dur = _get_video_info(input_video)
+    if in_dur > 0 and (in_dur < start_time or in_dur <= (duration + 60.0) or in_dur <= 300.0):
+        logger.info("Input video (duration %.2fs) is already a sliced clip. Forcing render start_time from %.2fs to 0.0s.", in_dur, start_time)
+        start_time = 0.0
+
     logger.info(
         "Rendering 100% Full-Screen Podcast Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
         start_time, duration, output_path
     )
-
-    if not os.path.exists(input_video):
-        logger.error("Input video file does not exist: %s", input_video)
-        return False
 
     # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to fill 1080x960 with Lanczos resampling + unsharp mask
     top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[top]"
@@ -173,8 +161,11 @@ def render_gaming_split_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # Probe input video dimensions to guarantee 100% boundary-safe FFmpeg crop parameters
-    in_w, in_h = _get_video_dimensions(input_video)
+    # Probe input video dimensions & duration to guarantee 100% boundary-safe FFmpeg crop parameters & zero timeout
+    in_w, in_h, in_dur = _get_video_info(input_video)
+    if in_dur > 0 and (in_dur < start_time or in_dur <= (duration + 60.0) or in_dur <= 300.0):
+        logger.info("Input video (duration %.2fs) is already a sliced clip. Forcing render start_time from %.2fs to 0.0s.", in_dur, start_time)
+        start_time = 0.0
 
     # Default facecam crop coordinates if not provided (Top-Left crop for Windah Basudara facecam)
     fc = facecam_coords or {"crop_w": 640, "crop_h": 480, "crop_x": 0, "crop_y": 0}
