@@ -531,12 +531,13 @@ class YouTubeFetcher:
         for c_mode in ['MWEB', 'WEB']:
             try:
                 yt = _build_pytubefix_yt(youtube_url, client=c_mode)
-                stream = (yt.streams.filter(progressive=True).get_highest_resolution()
-                          or yt.streams.filter(file_extension="mp4").get_highest_resolution())
+                stream = (yt.streams.filter(adaptive=True, file_extension="mp4", only_video=True).order_by("resolution").desc().first()
+                          or yt.streams.filter(file_extension="mp4").get_highest_resolution()
+                          or yt.streams.get_highest_resolution())
                 if stream and stream.url:
-                    logger.info("[L1] Extracted pytubefix video URL (client=%s, po_token=auto). Slicing...", c_mode)
+                    logger.info("[L1] Extracted 1080p pytubefix video URL (client=%s, resolution=%s). Slicing...", c_mode, getattr(stream, 'resolution', 'HD'))
                     if _ffmpeg_slice_from_url(stream.url):
-                        logger.info("✅ [L1] Video slice via pytubefix PO Token (%s): %s", c_mode, output_path)
+                        logger.info("✅ [L1] High-Res Video slice via pytubefix PO Token (%s): %s", c_mode, output_path)
                         return output_path
             except Exception as e1:
                 logger.warning("❌ [L1] pytubefix PO Token video (%s) failed: %s", c_mode, str(e1)[:200])
@@ -547,12 +548,13 @@ class YouTubeFetcher:
             for c_mode in ['MWEB', 'WEB']:
                 try:
                     yt = _build_pytubefix_yt(youtube_url, client=c_mode, use_oauth=True)
-                    stream = (yt.streams.filter(progressive=True).get_highest_resolution()
-                              or yt.streams.filter(file_extension="mp4").get_highest_resolution())
+                    stream = (yt.streams.filter(adaptive=True, file_extension="mp4", only_video=True).order_by("resolution").desc().first()
+                              or yt.streams.filter(file_extension="mp4").get_highest_resolution()
+                              or yt.streams.get_highest_resolution())
                     if stream and stream.url:
-                        logger.info("[L2] Extracted pytubefix video URL (client=%s, oauth=cached). Slicing...", c_mode)
+                        logger.info("[L2] Extracted 1080p pytubefix video URL (client=%s, oauth=cached, res=%s). Slicing...", c_mode, getattr(stream, 'resolution', 'HD'))
                         if _ffmpeg_slice_from_url(stream.url):
-                            logger.info("✅ [L2] Video slice via pytubefix OAuth (%s): %s", c_mode, output_path)
+                            logger.info("✅ [L2] High-Res Video slice via pytubefix OAuth (%s): %s", c_mode, output_path)
                             return output_path
                 except Exception as e2:
                     logger.warning("❌ [L2] pytubefix OAuth video (%s) failed: %s", c_mode, str(e2)[:200])
@@ -564,7 +566,7 @@ class YouTubeFetcher:
         if has_cookies:
             try:
                 ydl_opts = {
-                    "format": "b/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "format": "bestvideo[height>=1080]+bestaudio/bestvideo[height>=720]+bestaudio/best",
                     "outtmpl": output_path,
                     "nocheckcertificate": True,
                     "quiet": True,
@@ -579,7 +581,7 @@ class YouTubeFetcher:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([youtube_url])
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
-                    logger.info("✅ [L3] Video downloaded via yt-dlp + cookies: %s", output_path)
+                    logger.info("✅ [L3] 1080p Video downloaded via yt-dlp + cookies: %s", output_path)
                     return output_path
             except Exception as e3:
                 logger.warning("❌ [L3] yt-dlp + cookies video failed: %s", str(e3)[:200])
@@ -587,7 +589,7 @@ class YouTubeFetcher:
         # ── LAYER 4: yt-dlp aggressive client rotation ───────────────────────
         try:
             ydl_opts = {
-                "format": "b/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                "format": "bestvideo[height>=1080]+bestaudio/bestvideo[height>=720]+bestaudio/best",
                 "outtmpl": output_path,
                 "nocheckcertificate": True,
                 "quiet": True,
@@ -600,10 +602,10 @@ class YouTubeFetcher:
                 ydl_opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(float(start_sec), float(end_sec))])
                 ydl_opts["force_keyframes_at_cuts"] = True
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([youtube_url])
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([youtube_url])
             if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
-                logger.info("✅ [L4] Video downloaded via yt-dlp client rotation: %s", output_path)
+                logger.info("✅ [L4] 1080p Video downloaded via yt-dlp client rotation: %s", output_path)
                 return output_path
         except Exception as e4:
             logger.warning("❌ [L4] yt-dlp client rotation video failed: %s", str(e4)[:200])

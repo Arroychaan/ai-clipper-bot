@@ -76,11 +76,11 @@ def render_vertical_shorts(
         logger.error("Input video file does not exist: %s", input_video)
         return False
 
-    # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to fill 1080x960
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    # 1. Top Half Stream (1080x960): Left Speaker (x=0 to iw/2) cropped tight & scaled to fill 1080x960 with Lanczos resampling + unsharp mask
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[top]"
 
-    # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to fill 1080x960
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
+    # 2. Bottom Half Stream (1080x960): Right Speaker (x=iw/2 to iw) cropped tight & scaled to fill 1080x960 with Lanczos resampling + unsharp mask
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920 canvas)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -113,15 +113,16 @@ def render_vertical_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "superfast",
-        "-crf", "22",
+        "-preset", "fast",
+        "-crf", "17",
+        "-pix_fmt", "yuv420p",
         "-threads", "0",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "192k",
         output_path
     ]
 
-    logger.info("Executing 100% Full-Screen 9:16 Split-Screen FFmpeg superfast render command...")
+    logger.info("Executing 100% Full-Screen 9:16 Split-Screen Wayin.ai Ultra HD (Lanczos + Unsharp + CRF 17) render command...")
 
     try:
         subprocess.run(
@@ -187,11 +188,11 @@ def render_gaming_split_shorts(
 
     logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d", in_w, in_h, cw, ch, cx, cy)
 
-    # 1. TOP HALF (1080x960): Streamer Facecam cropped & scaled to fill 1080x960
-    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[top]"
+    # 1. TOP HALF (1080x960): Streamer Facecam cropped tight & scaled to fill 1080x960 with Lanczos sharp resampling + unsharp sharpening
+    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.6:3:3:0.0[top]"
 
-    # 2. BOTTOM HALF (1080x960): Main Gameplay Stream centered crop & scaled to fill 1080x960
-    bottom_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase,crop=1080:960[bottom]"
+    # 2. BOTTOM HALF (1080x960): Main Gameplay Stream centered crop & scaled to fill 1080x960 with Lanczos sharp resampling + unsharp sharpening
+    bottom_filter = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[bottom]"
 
     # 3. Stack Top & Bottom Vertically (Total 1080x1920)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
@@ -224,15 +225,16 @@ def render_gaming_split_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "superfast",
-        "-crf", "20",
+        "-preset", "fast",
+        "-crf", "17",
+        "-pix_fmt", "yuv420p",
         "-threads", "0",
         "-c:a", "aac",
         "-b:a", "192k",
         output_path
     ]
 
-    logger.info("Executing Gaming Split-Screen (Top: Facecam, Bottom: Gameplay) 1080p Full HD render command...")
+    logger.info("Executing Gaming Split-Screen Wayin.ai Ultra HD (Lanczos + Unsharp + CRF 17) 1080p Full HD render command...")
     try:
         subprocess.run(
             cmd,
