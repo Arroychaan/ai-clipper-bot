@@ -195,20 +195,10 @@ def render_gaming_split_shorts(
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
         f"[stacked]drawbox=y=956:color={divider_color}:width=iw:height=8:t=fill,"
-        f"drawbox=y=958:color=white@0.95:width=iw:height=4:t=fill[base_div]"
+        f"drawbox=y=958:color=white@0.95:width=iw:height=4:t=fill[outv]"
     )
 
-    # 5. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
-    if hook_title and hook_title.strip():
-        clean_hook = hook_title.strip().upper().replace("'", "").replace(":", "")[:45]
-        hook_banner_filter = (
-            f"[base_div]drawtext=text='🔥 {clean_hook} 🔥':font=Arial:fontsize=46:fontcolor=yellow:"
-            f"box=1:boxcolor=black@0.85:boxborderw=18:x=(w-text_w)/2:y=60:enable='between(t,0,1.8)'[outv]"
-        )
-    else:
-        hook_banner_filter = "[base_div]copy[outv]"
-
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}"
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -245,7 +235,7 @@ def render_gaming_split_shorts(
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback without subtitles...", err_msg)
-        filter_complex_fallback = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}".replace("[base_div]", "[outv]")
+        filter_complex_fallback = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
         fallback_cmd = [
             "ffmpeg", "-y",
             "-ss", f"{start_time:.2f}",
