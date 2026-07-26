@@ -255,7 +255,7 @@ Your task is to analyze the full transcript with timestamps and extract ALL TOP 
 
 STRICT CRITERIA & RULES:
 1. SCORE THRESHOLD: EVERY clip MUST have a 'viral_score' >= 95! Only select truly elite, high-retention, funny, dramatic, or mind-blowing moments.
-2. NO MID-SENTENCE TRUNCATION: Each clip MUST start at the exact beginning of a sentence, and end AFTER the full punchline or reaction laughter is delivered.
+2. COMPLETE COMEDIC STORY ARCS & PUNCHLINES: Each clip MUST start at the setup phase of a story/joke and MUST end AFTER the full punchline, scream, or laughter reaction is complete. NEVER cut off mid-sentence or before the reaction ends.
 3. NO OVERLAPPING CLIPS: Ensure extracted clip time ranges do not heavily overlap (at least 20 seconds apart).
 4. DURATION: Each clip MUST be between {MIN_CLIP_DURATION} and {MAX_CLIP_DURATION} seconds long.
 5. Provide: 'title' (short clickbait under 50 chars), 'caption' (1-2 line aesthetic caption {lang_instruction}), and 'hashtags' (4-6 trending tags).

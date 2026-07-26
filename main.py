@@ -174,18 +174,8 @@ def process_single_video(
 
             render_start_time = 0.0 if v_duration <= (duration + 15.0) else start_sec
 
-            sub_ass_path = str(TEMP_DIR / f"{video_id}_sub_{clip_idx}.ass")
-            from core.audio_processor import generate_ass_subtitle_file
-            try:
-                generate_ass_subtitle_file(
-                    words=transcript_data.get("words", []),
-                    start_sec=start_sec,
-                    end_sec=end_sec,
-                    output_ass_path=sub_ass_path
-                )
-            except Exception as sub_err:
-                logger.warning("Failed to generate ASS subtitles: %s", str(sub_err))
-                sub_ass_path = None
+            # Subtitle Burning Disabled per User Directive ("jangan berikan subtitle!")
+            sub_ass_path = None
 
             if force_gaming_mode:
                 msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."

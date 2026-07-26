@@ -81,18 +81,18 @@ def calibrate_cut_timestamps(
                     best_midpoint_ms = midpoint
             
             if best_midpoint_ms is not None:
-                # Add +1.0s trailing safety margin so punchline/laughter is fully captured
-                calibrated_end_sec = round((best_midpoint_ms / 1000.0) + 1.0, 2)
+                # Add +1.5s trailing safety margin so punchline/laughter is fully captured
+                calibrated_end_sec = round((best_midpoint_ms / 1000.0) + 1.5, 2)
                 logger.info("Calibrated end timestamp from %.2fs to silence midpoint + margin %.2fs (shift: %+.2fs)",
                             end_sec, calibrated_end_sec, calibrated_end_sec - end_sec)
                 return start_sec, calibrated_end_sec
 
-        logger.info("No silence gap found within ±%dms window. Preserving end timestamp + 1.0s margin",
+        logger.info("No silence gap found within ±%dms window. Preserving end timestamp + 1.5s margin",
                     window_ms)
     except Exception as e:
         logger.error("Silence calibration failed with error: %s. Reverting to uncalibrated timestamp.", str(e))
 
-    return start_sec, round(end_sec + 1.0, 2)
+    return start_sec, round(end_sec + 1.5, 2)
 
 
 
