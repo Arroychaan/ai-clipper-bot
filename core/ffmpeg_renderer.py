@@ -191,26 +191,29 @@ def render_gaming_split_shorts(
 
     logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d", in_w, in_h, cw, ch, cx, cy)
 
-    # 1. TOP SECTION (1080x680): Streamer Facecam cropped tight & scaled to fill top 680px with Lanczos sharp resampling
-    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=680:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:680,unsharp=3:3:0.6:3:3:0.0[top]"
+    # 1. TOP SECTION (1080x640): Streamer Facecam ONLY cropped tight & scaled to fill top 640px
+    top_filter = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=w=1080:h=640:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:640,unsharp=3:3:0.6:3:3:0.0[top]"
 
-    # 2. MIDDLE SECTION (1080x608): Full 16:9 Uncropped Gameplay Stream (0% side cropping, 100% full game screen & health bars visible!)
-    middle_filter = "[0:v]scale=w=1080:h=608:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=3:3:0.4:3:3:0.0[middle]"
+    # 2. BOTTOM SECTION BACKGROUND (1080x1280): Video scaled & blurred for ambient padding
+    bot_bg_filter = "[0:v]scale=w=1080:h=1280:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:1280,boxblur=25:5,drawbox=color=black@0.45:width=iw:height=ih:t=fill[bot_bg]"
 
-    # 3. BOTTOM SECTION (1080x632): Ambient Darkened Blurred Video Background for Subtitles & FYP Aesthetics
-    bottom_filter = "[0:v]scale=w=1080:h=632:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:632,boxblur=25:5,drawbox=color=black@0.45:width=iw:height=ih:t=fill[bottom]"
+    # 3. BOTTOM SECTION GAMEPLAY (1080x608): Full 16:9 Uncropped Gameplay Stream (0% side cropping, 100% full game screen & health bars visible!)
+    game_fg_filter = "[0:v]scale=w=1080:h=608:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=3:3:0.4:3:3:0.0[game_fg]"
 
-    # 4. Vertical Stack Top (680), Middle (608), Bottom (632) -> Total 1080x1920 Canvas
-    stack_filter = "[top][middle][bottom]vstack=inputs=3[stacked]"
+    # 4. Overlay Uncropped 16:9 Gameplay centered inside Bottom Section (at y=336 relative to bottom)
+    bot_overlay_filter = "[bot_bg][game_fg]overlay=x=0:y=336[bottom]"
 
-    # 5. Sleek Neon Divider Accent Lines at Top/Middle (Y=680) and Middle/Bottom (Y=1288) Boundaries
+    # 5. Stack Top (640px Streamer) & Bottom (1280px Full Game) Vertically -> Total 1080x1920 Canvas
+    stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
+
+    # 6. Sleek Neon Divider Accent Line at boundary between Top Streamer and Bottom Game (Y=640)
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
-        f"[stacked]drawbox=y=676:color={divider_color}:width=iw:height=8:t=fill,"
-        f"drawbox=y=1284:color={divider_color}:width=iw:height=8:t=fill[base_div]"
+        f"[stacked]drawbox=y=636:color={divider_color}:width=iw:height=8:t=fill,"
+        f"drawbox=y=638:color=white@0.95:width=iw:height=4:t=fill[base_div]"
     )
 
-    # 6. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
+    # 7. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
     if hook_title and hook_title.strip():
         clean_hook = hook_title.strip().upper().replace("'", "").replace(":", "")[:45]
         hook_banner_filter = (
@@ -220,18 +223,18 @@ def render_gaming_split_shorts(
     else:
         hook_banner_filter = "[base_div]copy[base]"
 
-    # 7. Burn-in Subtitles in bottom blurred aesthetic section (Y=1350..1850)
+    # 8. Burn-in Subtitles in bottom section (Y=1600)
     if subtitle_path and os.path.exists(subtitle_path):
         escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
         if subtitle_path.endswith(".ass"):
             final_sub_filter = f"[base]ass='{escaped_sub_path}'[outv]"
         else:
-            sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=300"
+            sub_style = "Fontsize=28,PrimaryColour=&H0066FF00&,OutlineColour=&H000000&,Bold=1,Italic=1,Alignment=2,MarginV=180"
             final_sub_filter = f"[base]subtitles='{escaped_sub_path}':force_style='{sub_style}'[outv]"
     else:
         final_sub_filter = "[base]fps=30[outv]"
 
-    filter_complex = f"{top_filter}; {middle_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}; {final_sub_filter}"
+    filter_complex = f"{top_filter}; {bot_bg_filter}; {game_fg_filter}; {bot_overlay_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}; {final_sub_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -268,7 +271,7 @@ def render_gaming_split_shorts(
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback without subtitles...", err_msg)
-        filter_complex_fallback = f"{top_filter}; {middle_filter}; {bottom_filter}; {stack_filter}; {divider_filter}".replace("[base_div]", "[outv]")
+        filter_complex_fallback = f"{top_filter}; {bot_bg_filter}; {game_fg_filter}; {bot_overlay_filter}; {stack_filter}; {divider_filter}".replace("[base_div]", "[outv]")
         fallback_cmd = [
             "ffmpeg", "-y",
             "-ss", f"{start_time:.2f}",
