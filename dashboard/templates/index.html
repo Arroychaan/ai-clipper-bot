@@ -901,6 +901,18 @@
         return;
       }
 
+      // Extract Video ID in JS immediately so modal pops up with ZERO delay!
+      const match = url.match(/(?:v=|\/live\/|\/shorts\/|\/embed\/|youtu\.be\/|\/v\/|e\/|watch\?v=)([^#\&\?\/]{11})/);
+      const videoId = match ? match[1] : null;
+
+      if (!videoId) {
+        showToast('Link YouTube tidak valid. Harap gunakan format link YouTube yang benar.', 'error');
+        return;
+      }
+
+      // 🚨 OPEN MODAL POPUP IMMEDIATELY ON CLICK!
+      openProgressModal(videoId);
+
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Mengirim...</span>`;
 
@@ -917,9 +929,6 @@
 
         showToast(data.message || 'Link berhasil dikirim!', 'success');
         input.value = '';
-        
-        currentActiveVideoId = data.video_id;
-        openProgressModal(data.video_id);
       } catch (err) {
         showToast(err.message || 'Terjadi kesalahan saat memproses link', 'error');
       } finally {
