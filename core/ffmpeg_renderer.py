@@ -189,10 +189,10 @@ def render_gaming_split_shorts(
     middle_filter = "[0:v]scale=w=1080:h=608:force_original_aspect_ratio=decrease:flags=lanczos,unsharp=3:3:0.4:3:3:0.0[middle]"
 
     # 3. BOTTOM SECTION (1080x664): Dedicated Dark Clean Background Box for FYP Karaoke Subtitles (Gg Clip Viral Format)
-    bottom_filter = "color=c=black@0.92:s=1080x664[bottom]"
+    bottom_filter = "color=c=black@0.92:s=1080x664:r=30[bottom]"
 
-    # 4. Vertical Stack Top (648px Facecam), Middle (608px Uncropped Game), Bottom (664px Subtitle Box) -> Total 1080x1920 Canvas
-    stack_filter = "[top][middle][bottom]vstack=inputs=3[stacked]"
+    # 4. Vertical Stack Top (648px Facecam), Middle (608px Uncropped Game), Bottom (664px Subtitle Box) -> Total 1080x1920 Canvas (shortest=1 stops infinite color filter)
+    stack_filter = "[top][middle][bottom]vstack=inputs=3:shortest=1[stacked]"
 
     # 5. Sleek Neon Divider Accent Lines at Y=648 and Y=1256 Boundaries
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
@@ -237,6 +237,7 @@ def render_gaming_split_shorts(
         "-crf", "17",
         "-pix_fmt", "yuv420p",
         "-threads", "0",
+        "-shortest",
         "-c:a", "aac",
         "-b:a", "192k",
         output_path
@@ -272,6 +273,7 @@ def render_gaming_split_shorts(
             "-preset", "superfast",
             "-crf", "20",
             "-threads", "0",
+            "-shortest",
             "-c:a", "aac",
             "-b:a", "192k",
             output_path
