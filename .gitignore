@@ -8,4 +8,6 @@ logs/
 venv/
 *.db
 bot_state.db
+config/models/
+*.onnx
 
