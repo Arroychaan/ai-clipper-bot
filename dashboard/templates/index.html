@@ -335,6 +335,18 @@ v>
 
   </main>
 
+  <!-- FLOATING PERSISTENT PROGRESS WIDGET BUTTON -->
+  <div id="floatingProgressWidget" class="hidden fixed bottom-6 left-6 z-40 animate-bounce">
+    <button onclick="reopenActiveProgressModal()" class="px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white text-xs font-extrabold shadow-2xl border border-purple-400/50 flex items-center gap-2.5 transition-all">
+      <i class="fa-solid fa-spinner animate-spin text-base text-yellow-300"></i>
+      <div class="text-left">
+        <div class="text-[10px] text-purple-200 uppercase font-mono tracking-wider">Proses Sedang Berjalan</div>
+        <div class="text-xs font-black"><span id="floatingWidgetVideoId">ID</span> (<span id="floatingWidgetPercent">15%</span>)</div>
+      </div>
+      <i class="fa-solid fa-up-right-and-down-left-from-center text-xs ml-1 text-cyan-200"></i>
+    </button>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
 
@@ -774,6 +786,16 @@ v>
 
           const totalMb = (v.total_source_mb + v.clips_total_mb).toFixed(1);
 
+          const actionBtn = v.status === 'PROCESSING'
+            ? `<button onclick="openProgressModal('${v.video_id}')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1.5 animate-pulse" title="Lihat progress pemrosesan live">
+                <i class="fa-solid fa-spinner animate-spin text-yellow-300"></i>
+                <span>Lihat Progress</span>
+               </button>`
+            : `<button onclick="regenerateVpsClip('${v.video_id}')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1" title="Generate klip langsung dari cache VPS tanpa re-download">
+                <i class="fa-solid fa-bolt text-yellow-300"></i>
+                <span>Generate Klip</span>
+               </button>`;
+
           return `
             <tr class="hover:bg-slate-900/60 transition-colors">
               <td class="p-3.5">
@@ -794,14 +816,7 @@ v>
                 ${statusBadge}
               </td>
               <td class="p-3.5 text-right space-x-1.5">
-                <button 
-                  onclick="regenerateVpsClip('${v.video_id}')" 
-                  class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-1"
-                  title="Generate klip langsung dari cache VPS tanpa re-download"
-                >
-                  <i class="fa-solid fa-bolt text-yellow-300"></i>
-                  <span>Generate Klip</span>
-                </button>
+                ${actionBtn}
 
                 <button 
                   onclick="deleteVpsVideo('${v.video_id}')" 
@@ -821,13 +836,17 @@ v>
       }
     }
 
+    let activeProcessingVideoId = null;
+
     async function regenerateVpsClip(videoId) {
+      // 1. OPEN PROGRESS MODAL INSTANTLY!
+      openProgressModal(videoId);
+
       try {
         const res = await fetch(`/api/vps/regenerate-clip/${videoId}`, { method: 'POST' });
         if (!res.ok) throw new Error('Gagal memulai re-generasi klip');
         const data = await res.json();
         showToast(data.message || 'Re-generasi klip dimulai!', 'success');
-        openProgressModal(videoId);
       } catch (err) {
         showToast(err.message || 'Gagal meregenerasi klip', 'error');
       }
@@ -898,9 +917,11 @@ v>
     }
 
     function openProgressModal(videoId) {
+      activeProcessingVideoId = videoId;
       const modal = document.getElementById('progressModal');
       document.getElementById('progressVideoId').textContent = videoId;
       document.getElementById('progressModalTitle').textContent = 'Memproses Klip Instan...';
+      document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i>`;
       document.getElementById('progressErrorContainer').classList.add('hidden');
       document.getElementById('progressBarFill').style.width = '15%';
       document.getElementById('progressPercentText').textContent = '15%';
@@ -916,7 +937,32 @@ v>
 
     function closeProgressModal() {
       document.getElementById('progressModal').classList.add('hidden');
-      if (progressInterval) clearInterval(progressInterval);
+      if (activeProcessingVideoId) {
+        showFloatingWidget(activeProcessingVideoId, document.getElementById('progressPercentText').textContent);
+      }
+    }
+
+    function reopenActiveProgressModal() {
+      if (activeProcessingVideoId) {
+        openProgressModal(activeProcessingVideoId);
+      }
+    }
+
+    function showFloatingWidget(videoId, percentText) {
+      const widget = document.getElementById('floatingProgressWidget');
+      const vIdSpan = document.getElementById('floatingWidgetVideoId');
+      const pctSpan = document.getElementById('floatingWidgetPercent');
+      if (widget && vIdSpan && pctSpan) {
+        vIdSpan.textContent = videoId;
+        pctSpan.textContent = percentText || '15%';
+        widget.classList.remove('hidden');
+      }
+    }
+
+    function hideFloatingWidget() {
+      const widget = document.getElementById('floatingProgressWidget');
+      if (widget) widget.classList.add('hidden');
+      activeProcessingVideoId = null;
     }
 
     async function pollVideoProgress(videoId) {
@@ -930,14 +976,20 @@ v>
         document.getElementById('progressStepText').textContent = data.step || '[STEP 1/6]';
         document.getElementById('progressMessageText').textContent = data.message || 'Memproses...';
 
-        if (data.status === 'COMPLETED') {
+        if (data.status === 'PROCESSING') {
+          activeProcessingVideoId = videoId;
+          showFloatingWidget(videoId, `${data.percent}%`);
+        } else if (data.status === 'COMPLETED') {
           clearInterval(progressInterval);
+          hideFloatingWidget();
           document.getElementById('progressModalTitle').textContent = '🎉 Pemrosesan Selesai!';
           document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 text-xl"></i>`;
           showToast('🎉 Klip instan berhasil dibuat!', 'success');
           loadDashboard();
+          loadVpsStorage();
         } else if (data.status === 'FAILED') {
           clearInterval(progressInterval);
+          hideFloatingWidget();
           document.getElementById('progressModalTitle').textContent = '❌ Pemrosesan Gagal';
           document.getElementById('progressModalSpinner').innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-500 text-xl"></i>`;
           document.getElementById('progressErrorContainer').classList.remove('hidden');
