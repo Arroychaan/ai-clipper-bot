@@ -95,6 +95,62 @@ def calibrate_cut_timestamps(
     return start_sec, round(end_sec + 1.5, 2)
 
 
+def detect_audio_reaction_peaks(
+    audio_path: str,
+    start_sec: float,
+    end_sec: float,
+    sensitivity_factor: float = 1.6
+) -> List[Tuple[float, float]]:
+    """
+    Analyzes audio RMS volume energy to pinpoint high-emotion reaction peaks (screams, jumpscares, loud laughs).
+    Returns list of relative (peak_start, peak_end) timestamps within the clip.
+    """
+    if not audio_path or not os.path.exists(audio_path):
+        return []
+
+    try:
+        if AudioSegment is not None:
+            audio = AudioSegment.from_file(audio_path)
+            s_ms = int(max(0.0, start_sec) * 1000)
+            e_ms = int(min(len(audio), end_sec * 1000))
+            clip_audio = audio[s_ms:e_ms]
+            
+            chunk_ms = 100
+            chunks = [clip_audio[i:i+chunk_ms] for i in range(0, len(clip_audio), chunk_ms)]
+            rms_vals = [c.rms for c in chunks if len(c) > 0]
+            
+            if not rms_vals:
+                return []
+
+            avg_rms = sum(rms_vals) / len(rms_vals)
+            threshold = max(avg_rms * sensitivity_factor, max(rms_vals) * 0.65)
+            
+            peaks: List[Tuple[float, float]] = []
+            in_peak = False
+            p_start = 0.0
+            
+            for idx, r in enumerate(rms_vals):
+                t_sec = (idx * chunk_ms) / 1000.0
+                if r >= threshold and not in_peak:
+                    in_peak = True
+                    p_start = t_sec
+                elif r < threshold and in_peak:
+                    in_peak = False
+                    p_dur = t_sec - p_start
+                    if p_dur >= 0.4:
+                        peaks.append((round(p_start, 2), round(t_sec + 0.5, 2)))
+
+            if in_peak and (len(rms_vals) * chunk_ms / 1000.0 - p_start) >= 0.4:
+                peaks.append((round(p_start, 2), round(len(rms_vals) * chunk_ms / 1000.0, 2)))
+
+            logger.info("🔥 Detected %d audio reaction peaks (screams/jumpscares/laughs) in clip!", len(peaks))
+            return peaks
+    except Exception as e:
+        logger.warning("Failed to detect audio reaction peaks: %s", str(e))
+
+    return []
+
+
 
 def _format_srt_timestamp(seconds: float) -> str:
     """Formats floating-point seconds into SRT timestamp format: HH:MM:SS,mmm"""

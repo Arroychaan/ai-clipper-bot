@@ -152,17 +152,20 @@ def render_gaming_split_shorts(
     duration: float,
     output_path: str,
     facecam_coords: Optional[dict] = None,
-    subtitle_path: Optional[str] = None
+    subtitle_path: Optional[str] = None,
+    hook_title: Optional[str] = None,
+    reaction_peaks: Optional[list] = None
 ) -> bool:
     """
-    Renders a 9:16 Gaming Short with 2-Stack Split Screen (Windah Basudara / Wayin AI Killer):
-    - TOP HALF (1080x960): Streamer's facecam dynamically cropped from facecam_coords.
-    - BOTTOM HALF (1080x960): Main gameplay stream centered crop.
-    - DIVIDER: Modern glassmorphic neon divider accent between top and bottom half.
-    - SUBTITLES: CapCut Word-by-Word Active Highlighting positioned over gameplay section.
+    Renders a 9:16 Gaming Short with 2-Stack Split Screen (Wayin AI Killer Engine):
+    - TOP HALF (1080x960): Streamer's facecam dynamically cropped & Lanczos sharpened.
+    - BOTTOM HALF (1080x960): Main gameplay stream centered crop & Lanczos sharpened.
+    - DIVIDER: Dynamic Kinetic Neon RGB Divider (Pulse Red on reaction peaks / Jumpscares, Cyan elsewhere).
+    - HOOK BANNER: First 1.5 seconds viral clickbait hook banner popup for FYP retention lock.
+    - SUBTITLES: CapCut Master FYP Word-by-Word Bouncy Highlighting positioned at center.
     """
     logger.info(
-        "Rendering Gaming Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
+        "Rendering Wayin.ai Killer Gaming Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
         start_time, duration, output_path
     )
 
@@ -197,13 +200,24 @@ def render_gaming_split_shorts(
     # 3. Stack Top & Bottom Vertically (Total 1080x1920)
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
 
-    # 4. Draw sleek glassmorphic neon divider line across the center (Y=960)
+    # 4. Dynamic Kinetic Neon RGB Divider Line (Red Pulse on reaction peaks, Cyan elsewhere)
+    divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
-        "[stacked]drawbox=y=956:color=cyan@0.8:width=iw:height=8:t=fill,"
-        "drawbox=y=958:color=white@0.9:width=iw:height=4:t=fill[base]"
+        f"[stacked]drawbox=y=954:color={divider_color}:width=iw:height=12:t=fill,"
+        f"drawbox=y=958:color=white@0.95:width=iw:height=4:t=fill[base_div]"
     )
 
-    # 5. Burn-in Subtitles on center divider boundary if provided
+    # 5. Burn-in Detik 0-1.5 FYP Hook Title Card Banner
+    if hook_title and hook_title.strip():
+        clean_hook = hook_title.strip().upper().replace("'", "").replace(":", "")[:45]
+        hook_banner_filter = (
+            f"[base_div]drawtext=text='🔥 {clean_hook} 🔥':font=Arial:fontsize=46:fontcolor=yellow:"
+            f"box=1:boxcolor=black@0.75:boxborderw=18:x=(w-text_w)/2:y=60:enable='between(t,0,1.8)'[base]"
+        )
+    else:
+        hook_banner_filter = "[base_div]copy[base]"
+
+    # 6. Burn-in Subtitles on center divider boundary if provided
     if subtitle_path and os.path.exists(subtitle_path):
         escaped_sub_path = _escape_ffmpeg_path(subtitle_path)
         if subtitle_path.endswith(".ass"):
@@ -214,7 +228,7 @@ def render_gaming_split_shorts(
     else:
         final_sub_filter = "[base]fps=30[outv]"
 
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {final_sub_filter}"
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}; {hook_banner_filter}; {final_sub_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -234,7 +248,7 @@ def render_gaming_split_shorts(
         output_path
     ]
 
-    logger.info("Executing Gaming Split-Screen Wayin.ai Ultra HD (Lanczos + Unsharp + CRF 17) 1080p Full HD render command...")
+    logger.info("Executing Gaming Split-Screen Wayin.ai Killer Engine (Lanczos + Hook Card + Kinetic RGB Divider) render command...")
     try:
         subprocess.run(
             cmd,

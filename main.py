@@ -190,9 +190,11 @@ def process_single_video(
             sub_ass_path = None
 
             if force_gaming_mode:
-                msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."
+                msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Wayin.ai Killer HD (Skor {v_score}) -> {clip_filename}..."
                 logger.info("👉 [STEP 6/6] %s", msg_render)
                 add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
+                from core.audio_processor import detect_audio_reaction_peaks
+                r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
                 facecam_coords = detect_streamer_facecam(video_path)
                 render_success = render_gaming_split_shorts(
                     input_video=video_path,
@@ -200,7 +202,9 @@ def process_single_video(
                     duration=duration,
                     output_path=output_clip_path,
                     facecam_coords=facecam_coords,
-                    subtitle_path=sub_ass_path
+                    subtitle_path=sub_ass_path,
+                    hook_title=title,
+                    reaction_peaks=r_peaks
                 )
             else:
                 msg_render = f"🎙️ [{clip_idx}/{total_extracted}] [MODE PODCAST] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."
