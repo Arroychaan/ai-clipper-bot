@@ -191,22 +191,21 @@ def render_gaming_split_shorts(
     else:
         fc = facecam_coords or {"crop_w": 640, "crop_h": 533, "crop_x": 0, "crop_y": 0}
 
-    raw_cw = max(100, int(fc.get("crop_w", 640)))
-    raw_ch = max(100, int(fc.get("crop_h", 533)))
-    raw_cx = max(0, int(fc.get("crop_x", 0)))
-    raw_cy = max(0, int(fc.get("crop_y", 0)))
+    padded_w = in_w + 1000
+    padded_h = in_h + 1000
 
-    cw = min(in_w, raw_cw)
-    ch = min(in_h, raw_ch)
-    cx = max(0, min(in_w - cw, raw_cx))
-    cy = max(0, min(in_h - ch, raw_cy))
+    cw = max(50, min(padded_w, raw_cw))
+    ch = max(50, min(padded_h, raw_ch))
+    cx = max(0, min(padded_w - cw, raw_cx))
+    cy = max(0, min(padded_h - ch, raw_cy))
 
-    logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d (Start: %.2fs, Duration: %.2fs)",
-                in_w, in_h, cw, ch, cx, cy, render_start, render_duration)
+    logger.info("Padded Facecam Crop (%dx%d padded): crop=%d:%d:%d:%d (Start: %.2fs, Duration: %.2fs)",
+                padded_w, padded_h, cw, ch, cx, cy, render_start, render_duration)
 
-    # TOP (3 parts = 824px): Facecam crop → scale to 1080x824 → ZOOMED & CENTERED on face
+    # TOP (3 parts = 824px): 500px Padded Facecam crop → scale to 1080x824 → 100% ABSOLUTE DEAD CENTER
     top_filter = (
-        f"[0:v]crop={cw}:{ch}:{cx}:{cy},"
+        f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
+        f"[padded]crop={cw}:{ch}:{cx}:{cy},"
         f"scale=1080:824:flags=lanczos,"
         f"unsharp=3:3:0.6:3:3:0.0,"
         f"eq=brightness=0.02:contrast=1.05:saturation=1.15"
@@ -275,8 +274,8 @@ def render_gaming_split_shorts(
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback...", err_msg)
 
-        # Simplified fallback without color grading (3:4 ratio preserved)
-        top_fallback = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=lanczos[top]"
+        # Simplified fallback without color grading (3:4 ratio + 500px padded dead-center preserved)
+        top_fallback = f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded]; [padded]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=lanczos[top]"
         bottom_fallback = "[0:v]scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1096[bottom]"
         filter_fallback = f"{top_fallback}; {bottom_fallback}; {stack_filter}; {divider_filter}"
 

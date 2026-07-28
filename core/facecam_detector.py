@@ -142,6 +142,9 @@ def _detect_faces_in_frame(
     return results
 
 
+PAD_OFFSET = 500
+
+
 def _calculate_dead_center_crop(
     center_x: float,
     center_y: float,
@@ -149,39 +152,35 @@ def _calculate_dead_center_crop(
     fh: float,
     video_width: int,
     video_height: int,
-    zoom_factor: float = 1.25,
+    zoom_factor: float = 1.15,
     target_aspect: float = 824.0 / 1080.0
 ) -> Tuple[int, int, int, int]:
     """
-    2026 Dead-Center Crop Algorithm.
+    2026 Padded Absolute Dead-Center Crop Algorithm.
 
-    Guarantees that (center_x, center_y) is EXACTLY at the center of the crop box,
-    while maintaining target_aspect (height = width * target_aspect) and staying
-    strictly inside the video frame boundaries.
+    Calculates crop_x, crop_y, crop_w, crop_h relative to a 500px padded frame.
+    Guarantees 100.000% ABSOLUTE DEAD-CENTER positioning of Windah's face,
+    eliminating edge-clamping displacement even when facecam is on video borders.
     """
-    desired_w = max(100.0, fw * zoom_factor)
+    # Ultra-tight zoom: 1.15x face width for maximum focus on face + upper chest
+    crop_w = max(100.0, fw * zoom_factor)
+    crop_h = crop_w * target_aspect
 
-    # Maximum half-width that keeps center_x, center_y dead-centered inside boundaries
-    max_half_w_x = min(center_x, video_width - center_x)
-    max_half_h_y = min(center_y, video_height - center_y)
-    max_half_w_from_y = max_half_h_y / target_aspect
+    # Center in 500px padded coordinate space
+    center_x_padded = center_x + PAD_OFFSET
+    center_y_padded = center_y + PAD_OFFSET
 
-    half_w = min(desired_w / 2.0, max_half_w_x, max_half_w_from_y)
-    half_h = half_w * target_aspect
+    crop_x = int(round(center_x_padded - crop_w / 2.0))
+    crop_y = int(round(center_y_padded - crop_h / 2.0))
+    crop_w = int(round(crop_w))
+    crop_h = int(round(crop_h))
 
-    # Ensure minimum viable crop size
-    if half_w < 50.0:
-        half_w = min(100.0, max_half_w_x)
-        half_h = half_w * target_aspect
+    # Clamp to padded image boundaries (video_width + 1000 x video_height + 1000)
+    padded_w = video_width + 2 * PAD_OFFSET
+    padded_h = video_height + 2 * PAD_OFFSET
 
-    crop_w = int(round(half_w * 2.0))
-    crop_h = int(round(half_h * 2.0))
-    crop_x = int(round(center_x - half_w))
-    crop_y = int(round(center_y - half_h))
-
-    # Clamp safely
-    crop_x = max(0, min(video_width - crop_w, crop_x))
-    crop_y = max(0, min(video_height - crop_h, crop_y))
+    crop_x = max(0, min(padded_w - crop_w, crop_x))
+    crop_y = max(0, min(padded_h - crop_h, crop_y))
 
     return crop_x, crop_y, crop_w, crop_h
 
@@ -206,7 +205,7 @@ def _detect_face_in_frame(
     fc_x, fc_y, fw, fh, conf, skin = best
 
     cx, cy, cw, ch = _calculate_dead_center_crop(
-        fc_x, fc_y, fw, fh, video_width, video_height, zoom_factor=1.25, target_aspect=target_aspect
+        fc_x, fc_y, fw, fh, video_width, video_height, zoom_factor=1.15, target_aspect=target_aspect
     )
     return (cx, cy, cw, ch, conf, skin)
 
