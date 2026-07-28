@@ -49,16 +49,26 @@ PIPED_INSTANCES = [
     "https://pipedapi.adminforge.de"
 ]
 
+COBALT_INSTANCES = [
+    "https://api.cobalt.tools/api/json",
+    "https://cobalt.api.sciter.io/api/json",
+    "https://co.wuk.sh/api/json"
+]
+
 
 def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Queries public Invidious and Piped API instances to extract direct audio and video stream URLs.
+    Queries public Invidious, Piped, and Cobalt API instances to extract direct audio and video stream URLs.
     100% Bypasses YouTube datacenter IP blocks on VPS.
 
     Returns: (audio_url, video_url)
     """
     import urllib.request
     import json
+    import ssl
+
+    # Create unverified SSL context to prevent SSL: CERTIFICATE_VERIFY_FAILED errors on Linux VPS
+    ssl_ctx = ssl._create_unverified_context()
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -69,7 +79,7 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
         api_url = f"{instance}/api/v1/videos/{video_id}"
         try:
             req = urllib.request.Request(api_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode('utf-8'))
                     adaptive = data.get("adaptiveFormats", [])
@@ -119,7 +129,7 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
         api_url = f"{p_instance}/streams/{video_id}"
         try:
             req = urllib.request.Request(api_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode('utf-8'))
                     a_streams = data.get("audioStreams", [])
@@ -151,6 +161,27 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
 
         except Exception as e:
             logger.debug("Piped instance %s failed: %s", p_instance, str(e)[:100])
+
+    # 3. Try Cobalt API
+    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+    cob_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    for cob in COBALT_INSTANCES:
+        try:
+            body = json.dumps({"url": youtube_url, "downloadMode": "audio"}).encode('utf-8')
+            req = urllib.request.Request(cob, data=body, headers=cob_headers, method="POST")
+            with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+                if resp.status == 200:
+                    res_data = json.loads(resp.read().decode('utf-8'))
+                    audio_url = res_data.get("url")
+                    if audio_url:
+                        logger.info("✅ Extracted stream URL via Cobalt API (%s)", cob)
+                        return audio_url, audio_url
+        except Exception as e:
+            logger.debug("Cobalt instance %s failed: %s", cob, str(e)[:100])
 
     return None, None
 
@@ -547,13 +578,17 @@ class YouTubeFetcher:
         except Exception as e5:
             logger.warning("❌ [L5] yt-dlp bare fallback audio failed: %s", str(e5)[:200])
 
-        # ── LAYER 6: Invidious & Piped API Public Proxy Stream Fallback ───
+        # ── LAYER 6: Invidious, Piped & Cobalt Proxy Stream Fallback ───────
         try:
-            logger.info("🌐 [L6] Attempting Invidious/Piped Proxy API audio stream extraction for %s...", video_id)
+            logger.info("🌐 [L6] Attempting Invidious/Piped/Cobalt Proxy API audio stream extraction for %s...", video_id)
             inv_audio_url, _ = _fetch_proxy_stream_urls(video_id)
             if inv_audio_url:
                 ffmpeg_cmd = [
                     "ffmpeg", "-y",
+                    "-headers", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
+                    "-reconnect", "1",
+                    "-reconnect_streamed", "1",
+                    "-reconnect_delay_max", "5",
                     "-i", inv_audio_url,
                     "-ar", "16000",
                     "-ac", "1",
@@ -567,11 +602,28 @@ class YouTubeFetcher:
         except Exception as e6:
             logger.warning("❌ [L6] Proxy API audio fallback failed: %s", str(e6)[:200])
 
-        logger.error("❌ ALL 6 audio download layers EXHAUSTED for %s", youtube_url)
+        # ── LAYER 7: yt-dlp CLI binary subprocess fallback ─────────────────
+        try:
+            logger.info("🌐 [L7] Attempting yt-dlp CLI binary subprocess fallback for %s...", video_id)
+            cmd = [
+                "yt-dlp",
+                "--no-check-certificates",
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "-x", "--audio-format", "wav",
+                "-o", os.path.join(TEMP_DIR, f"{video_id}_audio.%(ext)s"),
+                youtube_url
+            ]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180, check=True)
+            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 10000:
+                logger.info("✅ [L7] Audio downloaded via yt-dlp CLI binary: %s", audio_path)
+                return video_id, audio_path
+        except Exception as e7:
+            logger.warning("❌ [L7] yt-dlp CLI binary audio fallback failed: %s", str(e7)[:200])
+
+        logger.error("❌ ALL 7 audio download layers EXHAUSTED for %s", youtube_url)
         raise RuntimeError(
-            f"Semua 6 metode download audio gagal untuk {youtube_url}. "
-            f"YouTube memblokir IP VPS. Solusi otomatis telah diaktifkan, namun jika masih terjadi, "
-            f"silakan perbarui yt-dlp (pip install -U yt-dlp)."
+            f"Semua 7 metode download audio gagal untuk {youtube_url}. "
+            f"YouTube memblokir IP VPS. Solusi otomatis SSL & Multi-Proxy telah diaktifkan."
         )
 
     @staticmethod
