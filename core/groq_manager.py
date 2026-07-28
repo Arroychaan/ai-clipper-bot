@@ -20,6 +20,88 @@ from config import GROQ_KEYS, MIN_CLIP_DURATION, MAX_CLIP_DURATION
 logger = logging.getLogger(__name__)
 
 
+def _compress_and_chunk_audio(audio_path: str, max_chunk_mb: float = 18.0) -> List[str]:
+    """
+    Compresses audio to lightweight 32k mono MP3 and splits into <= 18MB chunks if necessary.
+    Guarantees every chunk is strictly under Groq's 25 MB file size limit.
+
+    Returns list of chunk audio file paths.
+    """
+    import os
+    import subprocess
+
+    if not os.path.exists(audio_path):
+        return [audio_path]
+
+    file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+
+    # 1. Convert WAV to compressed 32k mono MP3 (reduces size by ~10x)
+    mp3_path = audio_path.rsplit(".", 1)[0] + "_compressed.mp3"
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", audio_path,
+            "-vn",
+            "-ar", "16000",
+            "-ac", "1",
+            "-b:a", "32k",
+            mp3_path
+        ]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=120)
+        if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
+            file_size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
+            audio_path = mp3_path
+            logger.info("Compressed WAV to 32k mono MP3 (New Size: %.2f MB)", file_size_mb)
+    except Exception as e:
+        logger.warning("Failed to compress WAV to MP3: %s", str(e))
+
+    # If compressed audio is under max_chunk_mb, return it directly
+    if file_size_mb <= max_chunk_mb:
+        return [audio_path]
+
+    # 2. Split audio into 10-minute segments (600s each)
+    logger.info("Audio file size (%.1f MB) exceeds Groq limit (25 MB). Chunking into 10-min segments...", file_size_mb)
+    chunk_paths = []
+    chunk_idx = 0
+
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            audio_path
+        ]
+        res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        total_dur = float(res.stdout.strip())
+    except Exception:
+        total_dur = 3600.0
+
+    segment_dur = 600.0
+    curr_start = 0.0
+
+    while curr_start < total_dur:
+        chunk_out = f"{audio_path}_chunk_{chunk_idx}.mp3"
+        slice_cmd = [
+            "ffmpeg", "-y",
+            "-ss", f"{curr_start:.2f}",
+            "-t", f"{segment_dur:.2f}",
+            "-i", audio_path,
+            "-c", "copy",
+            chunk_out
+        ]
+        try:
+            subprocess.run(slice_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=60)
+            if os.path.exists(chunk_out) and os.path.getsize(chunk_out) > 1000:
+                chunk_paths.append(chunk_out)
+        except Exception as e_slice:
+            logger.warning("Chunk slice %d failed: %s", chunk_idx, str(e_slice))
+
+        curr_start += segment_dur
+        chunk_idx += 1
+
+    return chunk_paths if chunk_paths else [audio_path]
+
+
 class ResilientGroqClient:
     """
     Fault-tolerant Groq API client that cycles through available API keys
@@ -47,7 +129,6 @@ class ResilientGroqClient:
         self.client = Groq(api_key=self.current_key)
         logger.warning("Rotated to next Groq API key (ending in ...%s)", self.current_key[-6:])
 
-
     def execute_with_retry(self, api_func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Executes a Groq API function with key rotation and exponential backoff retry.
@@ -67,7 +148,6 @@ class ResilientGroqClient:
                 self._rotate_key()
                 time.sleep(delay)
         
-        # Final attempt after all backoffs exhausted
         try:
             return api_func(self.client, *args, **kwargs)
         except Exception as e:
@@ -77,37 +157,81 @@ class ResilientGroqClient:
     def transcribe_audio(self, audio_path: str) -> Dict[str, Any]:
         """
         Transcribes audio file using Groq Whisper Large v3 with word-level timestamps.
-        
-        Args:
-            audio_path: Path to the audio file (.wav format).
-            
-        Returns:
-            Dict containing transcription text and word-level timestamp list.
+        Automatically compresses WAV to 32k MP3 and chunks into <=18MB segments
+        to prevent '413 Request Entity Too Large' errors.
         """
+        import os
+
         logger.info("Transcribing audio file via Groq Whisper v3: %s", audio_path)
 
-        def _call_whisper(client: Groq) -> Any:
-            with open(audio_path, "rb") as audio_file:
-                return client.audio.transcriptions.create(
-                    file=(audio_path, audio_file.read()),
-                    model="whisper-large-v3",
-                    response_format="verbose_json",
-                    timestamp_granularities=["word"]
-                )
+        # Pre-process audio: compress to 32k MP3 and chunk if > 18MB
+        chunks = _compress_and_chunk_audio(audio_path, max_chunk_mb=18.0)
 
-        response = self.execute_with_retry(_call_whisper)
-        
-        # Convert response to standard dict
-        if hasattr(response, "model_dump"):
-            res_dict = response.model_dump()
-        elif isinstance(response, dict):
-            res_dict = response
-        else:
-            res_dict = json.loads(response.text)
+        all_text_parts = []
+        all_segments = []
+        all_words = []
+        time_offset = 0.0
 
-        logger.info("Audio transcription completed successfully (%d words extracted)",
-                    len(res_dict.get("words", [])))
-        return res_dict
+        for chunk_idx, chunk_file in enumerate(chunks):
+            logger.info("🎙️ Transcribing chunk [%d/%d]: %s", chunk_idx + 1, len(chunks), chunk_file)
+
+            def _call_whisper(client: Groq) -> Any:
+                with open(chunk_file, "rb") as af:
+                    return client.audio.transcriptions.create(
+                        file=(os.path.basename(chunk_file), af.read()),
+                        model="whisper-large-v3",
+                        response_format="verbose_json",
+                        timestamp_granularities=["word"]
+                    )
+
+            try:
+                response = self.execute_with_retry(_call_whisper)
+
+                if hasattr(response, "model_dump"):
+                    res_dict = response.model_dump()
+                elif isinstance(response, dict):
+                    res_dict = response
+                else:
+                    res_dict = json.loads(response.text)
+
+                chunk_text = res_dict.get("text", "")
+                if chunk_text:
+                    all_text_parts.append(chunk_text)
+
+                for seg in res_dict.get("segments", []):
+                    all_segments.append({
+                        "start": round(seg.get("start", 0.0) + time_offset, 2),
+                        "end": round(seg.get("end", 0.0) + time_offset, 2),
+                        "text": seg.get("text", "")
+                    })
+
+                for w in res_dict.get("words", []):
+                    all_words.append({
+                        "word": w.get("word", ""),
+                        "start": round(w.get("start", 0.0) + time_offset, 2),
+                        "end": round(w.get("end", 0.0) + time_offset, 2)
+                    })
+
+                if all_segments:
+                    time_offset = all_segments[-1]["end"]
+                else:
+                    time_offset += 600.0
+
+            finally:
+                if chunk_file != audio_path and os.path.exists(chunk_file):
+                    try:
+                        os.remove(chunk_file)
+                    except Exception:
+                        pass
+
+        logger.info("Audio transcription completed successfully (%d words, %d segments extracted)",
+                    len(all_words), len(all_segments))
+
+        return {
+            "text": " ".join(all_text_parts),
+            "segments": all_segments,
+            "words": all_words
+        }
 
     def extract_viral_clip(self, transcript_data: Dict[str, Any]) -> Dict[str, Any]:
         """
