@@ -42,50 +42,57 @@ INVIDIOUS_INSTANCES = [
     "https://vid.puffyan.us"
 ]
 
+PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://api.piped.yt",
+    "https://pipedapi.tokhmi.xyz",
+    "https://pipedapi.adminforge.de"
+]
 
-def _fetch_invidious_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str]]:
+
+def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Queries public Invidious API instances to extract direct audio and video stream URLs.
+    Queries public Invidious and Piped API instances to extract direct audio and video stream URLs.
     100% Bypasses YouTube datacenter IP blocks on VPS.
 
     Returns: (audio_url, video_url)
     """
+    import urllib.request
+    import json
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
+    # 1. Try Invidious Instances
     for instance in INVIDIOUS_INSTANCES:
         api_url = f"{instance}/api/v1/videos/{video_id}"
         try:
             req = urllib.request.Request(api_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode('utf-8'))
-                    adaptive_formats = data.get("adaptiveFormats", [])
-                    format_streams = data.get("formatStreams", [])
+                    adaptive = data.get("adaptiveFormats", [])
+                    streams = data.get("formatStreams", [])
 
                     audio_url = None
                     video_url = None
 
-                    # Find best audio format
+                    # Check both 'mimeType' and 'type' keys (Invidious API compatibility)
                     audio_formats = [
-                        f for f in adaptive_formats
-                        if f.get("type", "").startswith("audio/") and f.get("url")
+                        f for f in adaptive
+                        if (str(f.get("mimeType", "") or f.get("type", "")).startswith("audio/")) and f.get("url")
                     ]
                     if audio_formats:
                         best_audio = max(audio_formats, key=lambda f: int(f.get("bitrate", 0) or 0))
                         audio_url = best_audio.get("url")
 
-                    # Find best video format
                     video_formats = [
-                        f for f in adaptive_formats
-                        if f.get("type", "").startswith("video/mp4") and f.get("url")
+                        f for f in adaptive
+                        if (str(f.get("mimeType", "") or f.get("type", "")).startswith("video/")) and f.get("url")
                     ]
                     if not video_formats:
-                        video_formats = [
-                            f for f in format_streams
-                            if f.get("url")
-                        ]
+                        video_formats = [f for f in streams if f.get("url")]
 
                     if video_formats:
                         best_vid = None
@@ -98,15 +105,52 @@ def _fetch_invidious_stream_urls(video_id: str) -> Tuple[Optional[str], Optional
                                 best_vid = v
                         if not best_vid:
                             best_vid = video_formats[0]
-
                         video_url = best_vid.get("url")
 
                     if audio_url or video_url:
-                        logger.info("✅ Extracted direct stream URLs via Invidious instance (%s)", instance)
+                        logger.info("✅ Extracted stream URLs via Invidious instance (%s)", instance)
                         return audio_url, video_url
 
         except Exception as e:
             logger.debug("Invidious instance %s failed: %s", instance, str(e)[:100])
+
+    # 2. Try Piped Instances
+    for p_instance in PIPED_INSTANCES:
+        api_url = f"{p_instance}/streams/{video_id}"
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    a_streams = data.get("audioStreams", [])
+                    v_streams = data.get("videoStreams", [])
+
+                    audio_url = None
+                    video_url = None
+
+                    if a_streams:
+                        best_a = max(a_streams, key=lambda s: int(s.get("bitrate", 0) or 0))
+                        audio_url = best_a.get("url")
+
+                    if v_streams:
+                        best_v = None
+                        for v in v_streams:
+                            q = str(v.get("quality", ""))
+                            if "1080" in q:
+                                best_v = v
+                                break
+                            elif "720" in q and not best_v:
+                                best_v = v
+                        if not best_v:
+                            best_v = v_streams[0]
+                        video_url = best_v.get("url")
+
+                    if audio_url or video_url:
+                        logger.info("✅ Extracted stream URLs via Piped instance (%s)", p_instance)
+                        return audio_url, video_url
+
+        except Exception as e:
+            logger.debug("Piped instance %s failed: %s", p_instance, str(e)[:100])
 
     return None, None
 
@@ -503,10 +547,10 @@ class YouTubeFetcher:
         except Exception as e5:
             logger.warning("❌ [L5] yt-dlp bare fallback audio failed: %s", str(e5)[:200])
 
-        # ── LAYER 6: Invidious API Public Proxy Stream Fallback ────────────
+        # ── LAYER 6: Invidious & Piped API Public Proxy Stream Fallback ───
         try:
-            logger.info("🌐 [L6] Attempting Invidious API audio stream extraction fallback for %s...", video_id)
-            inv_audio_url, _ = _fetch_invidious_stream_urls(video_id)
+            logger.info("🌐 [L6] Attempting Invidious/Piped Proxy API audio stream extraction for %s...", video_id)
+            inv_audio_url, _ = _fetch_proxy_stream_urls(video_id)
             if inv_audio_url:
                 ffmpeg_cmd = [
                     "ffmpeg", "-y",
@@ -518,10 +562,10 @@ class YouTubeFetcher:
                 subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, check=True, timeout=180)
                 if os.path.exists(audio_path) and os.path.getsize(audio_path) > 10000:
-                    logger.info("✅ [L6] Audio downloaded via Invidious API fallback: %s", audio_path)
+                    logger.info("✅ [L6] Audio downloaded via Proxy API fallback: %s", audio_path)
                     return video_id, audio_path
         except Exception as e6:
-            logger.warning("❌ [L6] Invidious API audio fallback failed: %s", str(e6)[:200])
+            logger.warning("❌ [L6] Proxy API audio fallback failed: %s", str(e6)[:200])
 
         logger.error("❌ ALL 6 audio download layers EXHAUSTED for %s", youtube_url)
         raise RuntimeError(
@@ -676,16 +720,16 @@ class YouTubeFetcher:
         except Exception as e5:
             logger.warning("❌ [L5] yt-dlp bare fallback video failed: %s", str(e5)[:200])
 
-        # ── LAYER 6: Invidious API Public Proxy Stream Fallback ────────────
+        # ── LAYER 6: Invidious & Piped API Public Proxy Stream Fallback ───
         try:
-            logger.info("🌐 [L6] Attempting Invidious API video stream extraction fallback for %s...", video_id)
-            _, inv_video_url = _fetch_invidious_stream_urls(video_id)
+            logger.info("🌐 [L6] Attempting Invidious/Piped Proxy API video stream extraction for %s...", video_id)
+            _, inv_video_url = _fetch_proxy_stream_urls(video_id)
             if inv_video_url:
                 if _ffmpeg_slice_from_url(inv_video_url):
-                    logger.info("✅ [L6] Video stream downloaded via Invidious API fallback: %s", output_path)
+                    logger.info("✅ [L6] Video stream downloaded via Proxy API fallback: %s", output_path)
                     return output_path
         except Exception as e6:
-            logger.warning("❌ [L6] Invidious API video fallback failed: %s", str(e6)[:200])
+            logger.warning("❌ [L6] Proxy API video fallback failed: %s", str(e6)[:200])
 
         if not os.path.exists(output_path) or os.path.getsize(output_path) < 10000:
             raise FileNotFoundError(
