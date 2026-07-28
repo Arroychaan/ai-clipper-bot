@@ -86,11 +86,20 @@ def render_vertical_shorts(
         render_start, duration, output_path
     )
 
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[top]"
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960,unsharp=3:3:0.4:3:3:0.0[bottom]"
-    stack_filter = "[top][bottom]vstack=inputs=2[outv]"
+    # Podcast layout matches gaming layout (3:4 ratio)
+    # TOP: 1080x824 (facecam or person 1)
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=824:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:824,unsharp=3:3:0.4:3:3:0.0[top]"
+    # BOTTOM: 1080x1096 (person 2 or gameplay)
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1096,unsharp=3:3:0.4:3:3:0.0[bottom]"
+    stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
+    
+    # Divider line at the boundary (y=820)
+    divider_filter = (
+        f"[stacked]drawbox=y=820:color=cyan@0.85:width=iw:height=8:t=fill,"
+        f"drawbox=y=822:color=white@0.95:width=iw:height=4:t=fill[outv]"
+    )
 
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}"
+    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -195,22 +204,22 @@ def render_gaming_split_shorts(
     logger.info("Clamped Facecam Crop for Video (%dx%d): crop=%d:%d:%d:%d (Start: %.2fs, Duration: %.2fs)",
                 in_w, in_h, cw, ch, cx, cy, render_start, render_duration)
 
-    # TOP: Facecam crop → scale to 1080x960 → sharpen → color boost
+    # TOP (3 parts = 824px): Facecam crop → scale to 1080x824 → ZOOMED & CENTERED on face
     top_filter = (
         f"[0:v]crop={cw}:{ch}:{cx}:{cy},"
-        f"scale=1080:960:flags=lanczos,"
+        f"scale=1080:824:flags=lanczos,"
         f"unsharp=3:3:0.6:3:3:0.0,"
         f"eq=brightness=0.02:contrast=1.05:saturation=1.15"
         f"[top]"
     )
 
-    # BOTTOM: Gameplay — center crop (saliency-aware: take center 75% width for action focus)
+    # BOTTOM (4 parts = 1096px): Gameplay — center crop (saliency-aware: center 75% width)
     gameplay_crop_w = int(in_w * 0.75)
     gameplay_crop_x = (in_w - gameplay_crop_w) // 2
     bottom_filter = (
         f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,"
-        f"scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,"
-        f"crop=1080:960,"
+        f"scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop=1080:1096,"
         f"unsharp=3:3:0.4:3:3:0.0,"
         f"eq=brightness=0.01:contrast=1.03:saturation=1.10"
         f"[bottom]"
@@ -218,11 +227,11 @@ def render_gaming_split_shorts(
 
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
 
-    # Divider line
+    # Divider line at the boundary (y=820, just before bottom starts at 824)
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
-        f"[stacked]drawbox=y=956:color={divider_color}:width=iw:height=8:t=fill,"
-        f"drawbox=y=958:color=white@0.95:width=iw:height=4:t=fill[outv]"
+        f"[stacked]drawbox=y=820:color={divider_color}:width=iw:height=8:t=fill,"
+        f"drawbox=y=822:color=white@0.95:width=iw:height=4:t=fill[outv]"
     )
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
@@ -266,9 +275,9 @@ def render_gaming_split_shorts(
         err_msg = e.stderr[-600:] if e.stderr else str(e)
         logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback...", err_msg)
 
-        # Simplified fallback without color grading
-        top_fallback = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=1080:960:flags=lanczos[top]"
-        bottom_fallback = "[0:v]scale=w=1080:h=960:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:960[bottom]"
+        # Simplified fallback without color grading (3:4 ratio preserved)
+        top_fallback = f"[0:v]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=lanczos[top]"
+        bottom_fallback = "[0:v]scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1096[bottom]"
         filter_fallback = f"{top_fallback}; {bottom_fallback}; {stack_filter}; {divider_filter}"
 
         fallback_cmd = [

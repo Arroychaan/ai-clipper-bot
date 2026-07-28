@@ -96,10 +96,11 @@ def _detect_face_in_frame(
     detector: Any,
     video_width: int,
     video_height: int,
-    target_aspect: float = 960.0 / 1080.0
+    target_aspect: float = 824.0 / 1080.0
 ) -> Optional[Tuple[int, int, int, int, float, float]]:
     """
     Detects the best streamer facecam in a single frame.
+    Tight zoom: only face + partial body visible, centered on face.
 
     Returns: (crop_x, crop_y, crop_w, crop_h, confidence, skin_density) or None.
     """
@@ -123,11 +124,8 @@ def _detect_face_in_frame(
             fc_x = fx + fw // 2
             fc_y = fy + fh // 2
 
-            # Filter out faces in the center game area (streamer facecam is in corners)
-            in_center_x = 0.28 * video_width < fc_x < 0.72 * video_width
-            in_center_y = 0.28 * video_height < fc_y < 0.72 * video_height
-            if in_center_x and in_center_y:
-                continue
+            # No center-filter: Windah's facecam can be in ANY position
+            # (corner overlay, center, fullscreen, etc.)
 
             # Verify skin tone
             pad_w = int(fw * 0.5)
@@ -153,8 +151,9 @@ def _detect_face_in_frame(
         center_x = fx + fw // 2
         center_y = fy + fh // 2
 
-        # Calculate crop box with 1080:960 aspect ratio centered on face
-        box_w = min(video_width, max(540, int(fw * 2.5)))
+        # Tight zoom: only face + partial body (1.5x face width = zoomed close-up)
+        # Aspect ratio 1080:824 (3:4 layout — top section smaller than bottom)
+        box_w = min(video_width, max(200, int(fw * 1.5)))
         box_h = int(box_w * target_aspect)
 
         crop_x = max(0, min(video_width - box_w, center_x - box_w // 2))
@@ -294,9 +293,9 @@ def detect_dynamic_facecam_track(
 
         if not raw_detections:
             logger.warning("No faces detected in any keyframe. Using fallback corner analysis.")
-            # Fallback: top-left corner crop
-            def_w = int(video_width * 0.38)
-            def_h = int(def_w * (960 / 1080))
+            # Fallback: top-left corner crop with 3:4 ratio
+            def_w = int(video_width * 0.25)
+            def_h = int(def_w * (824 / 1080))
             return [CropKeyframe(
                 timestamp_sec=0.0,
                 crop_x=0, crop_y=0,
