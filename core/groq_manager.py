@@ -338,3 +338,184 @@ Evaluate the entire transcript and extract ALL viral clip candidates (between 5 
 
         logger.info("Extracted %d elite viral clips (Score >= 95) from video!", len(valid_clips))
         return valid_clips
+
+    def extract_multimodal_viral_clips(
+        self,
+        transcript_data: Dict[str, Any],
+        vision_highlights: Optional[List[Dict[str, Any]]] = None,
+        audio_peaks: Optional[List[tuple]] = None,
+        scene_boundaries: Optional[List[Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        2026 Multimodal Clip Selection Engine.
+
+        Fuses 4 signal sources for truly intelligent clip selection:
+        1. Text transcript (Whisper) — dialogue, jokes, punchlines
+        2. Vision AI highlights (Groq qwen3.6-27b) — visual engagement, emotions
+        3. Audio energy peaks — screams, jumpscares, loud laughter
+        4. Scene boundaries (PySceneDetect) — natural cut points
+
+        This replaces the blind text-only extract_multiple_viral_clips.
+        """
+        text_content = transcript_data.get("text", "")
+        words = transcript_data.get("words") or transcript_data.get("segments", [])
+
+        if not text_content and words:
+            text_content = " ".join(w.get("word") or w.get("text", "") for w in words)
+
+        # Build timestamp marks
+        timestamped_summary = []
+        step = max(1, len(words) // 150) if words else 1
+        for w in words[::step]:
+            w_text = w.get("word") or w.get("text", "")
+            w_start = float(w.get("start", 0.0))
+            timestamped_summary.append(f"[{w_start:.1f}s]: {w_text}")
+        timestamp_snippet = "\n".join(timestamped_summary[:200])
+
+        # Build vision AI context
+        vision_context = ""
+        if vision_highlights:
+            vision_parts = []
+            for vh in vision_highlights[:10]:
+                vision_parts.append(
+                    f"  - Window {vh['start_sec']:.0f}s-{vh['end_sec']:.0f}s: "
+                    f"visual_engagement={vh['avg_score']:.0f}/100, "
+                    f"peak={vh['peak_score']:.0f}, "
+                    f"reactions={vh['reaction_count']}, "
+                    f"climax_moments={vh['climax_count']}"
+                )
+            vision_context = "VISION AI HIGHLIGHT ANALYSIS (from actual video frames):\n" + "\n".join(vision_parts)
+
+        # Build audio peaks context
+        audio_context = ""
+        if audio_peaks:
+            peak_parts = [f"  - Audio energy peak at {p[0]:.1f}s-{p[1]:.1f}s (scream/jumpscare/laugh)" for p in audio_peaks[:20]]
+            audio_context = "AUDIO ENERGY PEAKS (screams, jumpscares, loud reactions):\n" + "\n".join(peak_parts)
+
+        # Build scene boundary context
+        scene_context = ""
+        if scene_boundaries:
+            boundary_parts = [f"  - Scene cut at {b.timestamp_sec:.1f}s" for b in scene_boundaries[:30]]
+            scene_context = "SCENE BOUNDARIES (natural cut points - OBS transitions, camera switches):\n" + "\n".join(boundary_parts)
+
+        from config import TARGET_LANGUAGE, MIN_VIRAL_SCORE, MIN_CLIP_DURATION, MAX_CLIP_DURATION
+        lang_instruction = "in Indonesian (Bahasa Indonesia)" if TARGET_LANGUAGE == "id" else "in English"
+
+        system_prompt = f"""You are an elite viral content producer using MULTIMODAL INTELLIGENCE.
+You have been given 4 signal sources from the same gaming stream video:
+1. TEXT TRANSCRIPT — what the streamer said
+2. VISION AI ANALYSIS — what was VISUALLY happening (engagement scores, emotions, reactions from actual screenshots)
+3. AUDIO ENERGY PEAKS — moments of screaming, jumpscares, loud laughter
+4. SCENE BOUNDARIES — natural OBS scene transitions/camera switches
+
+USE ALL 4 SIGNALS TOGETHER to select the BEST viral clips. A truly viral moment will have:
+- HIGH visual engagement score (Vision AI)
+- Emotional streamer reaction (excited/scared/laughing)
+- Audio energy peak (scream/jumpscare)
+- Complete story/joke arc in the transcript text
+- Clip boundaries that align with natural scene cuts
+
+STRICT RULES:
+1. EVERY clip MUST have viral_score >= 95.
+2. Each clip MUST be between {MIN_CLIP_DURATION}s and {MAX_CLIP_DURATION}s.
+3. COMPLETE STORY ARCS: Start at setup, end AFTER full punchline/reaction.
+4. ALIGN start_time and end_time with nearest SCENE BOUNDARIES when possible (within 3s).
+5. PRIORITIZE windows with highest Vision AI engagement scores AND audio peaks.
+6. NO overlapping clips (at least 30s apart).
+7. Extract 5-20 clips depending on video density.
+
+OUTPUT STRICT JSON:
+{{
+  "clips": [
+    {{
+      "viral_score": 98,
+      "start_time": 120.5,
+      "end_time": 185.0,
+      "title": "Viral Moment Title",
+      "caption": "Short aesthetic caption {lang_instruction}.",
+      "hashtags": ["#fyp", "#viral", "#shorts"],
+      "selection_reason": "High vision score 92 + audio peak at 145s + complete joke arc"
+    }}
+  ]
+}}"""
+
+        user_prompt = f"""FULL TRANSCRIPT:
+{text_content[:12000]}
+
+TIMESTAMP MARKS:
+{timestamp_snippet}
+
+{vision_context}
+
+{audio_context}
+
+{scene_context}
+
+Using ALL 4 signal sources, extract the BEST viral clips (5-20 clips, score >= 95)."""
+
+        def _call_llama(client: Any) -> Any:
+            return client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+
+        logger.info("🧠 Querying Llama 3.3 70B with MULTIMODAL FUSION (text + vision + audio + scene)...")
+        completion = self.execute_with_retry(_call_llama)
+        raw_json_str = completion.choices[0].message.content.strip()
+
+        try:
+            res_json = json.loads(raw_json_str)
+        except json.JSONDecodeError:
+            if "```json" in raw_json_str:
+                raw_json_str = raw_json_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw_json_str:
+                raw_json_str = raw_json_str.split("```")[1].split("```")[0].strip()
+            res_json = json.loads(raw_json_str)
+
+        raw_clips = res_json.get("clips") if isinstance(res_json, dict) and "clips" in res_json else [res_json] if isinstance(res_json, dict) else []
+
+        valid_clips = []
+        for c in raw_clips:
+            if not isinstance(c, dict):
+                continue
+            s_score = int(c.get("viral_score", 95))
+            if s_score < MIN_VIRAL_SCORE:
+                logger.info("Filtering out clip with multimodal score %d < %d", s_score, MIN_VIRAL_SCORE)
+                continue
+
+            s_time = float(c.get("start_time", 0.0))
+            e_time = float(c.get("end_time", s_time + 30.0))
+            dur = e_time - s_time
+            if dur < MIN_CLIP_DURATION or dur > MAX_CLIP_DURATION:
+                e_time = s_time + min(max(dur, MIN_CLIP_DURATION), MAX_CLIP_DURATION)
+
+            # Snap to scene boundaries if available
+            if scene_boundaries:
+                from core.scene_detector import snap_to_nearest_scene_boundary
+                s_time = snap_to_nearest_scene_boundary(s_time, scene_boundaries, max_snap_distance_sec=3.0, prefer_direction="before")
+                e_time = snap_to_nearest_scene_boundary(e_time, scene_boundaries, max_snap_distance_sec=3.0, prefer_direction="after")
+
+            c["start_time"] = round(s_time, 2)
+            c["end_time"] = round(e_time, 2)
+            c["viral_score"] = s_score
+
+            raw_tags = c.get("hashtags", ["#fyp", "#viral", "#shorts", "#trending"])
+            c["hashtags_str"] = " ".join(raw_tags) if isinstance(raw_tags, list) else str(raw_tags)
+            valid_clips.append(c)
+
+        if not valid_clips and raw_clips and isinstance(raw_clips[0], dict):
+            single = raw_clips[0]
+            single["viral_score"] = 95
+            valid_clips.append(single)
+
+        logger.info(
+            "🎯 Multimodal fusion extracted %d elite clips (Vision+Audio+Text+Scene)!",
+            len(valid_clips)
+        )
+        return valid_clips
+

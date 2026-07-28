@@ -451,6 +451,12 @@ class YouTubeFetcher:
             ydl_opts = {
                 "format": "ba/b/best",
                 "outtmpl": output_template,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "wav",
+                    "preferredquality": "192",
+                }],
+                "postprocessor_args": ["-ar", "16000", "-ac", "1"],
                 "quiet": True,
                 "overwrites": True,
             }

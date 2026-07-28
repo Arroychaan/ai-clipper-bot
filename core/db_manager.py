@@ -334,7 +334,9 @@ def get_dashboard_stats() -> dict:
         return {
             "total_clips": total,
             "ready_to_post": ready,
+            "ready_clips": ready,
             "posted": posted,
+            "posted_clips": posted,
             "avg_viral_score": avg_score
         }
 
@@ -525,11 +527,16 @@ def delete_vps_source_video(video_id: str) -> dict:
                 except Exception as e:
                     logger.warning("Failed to remove clip file %s: %s", c_path, str(e))
 
-        cursor.execute("DELETE FROM clips WHERE video_id = ?", (video_id,))
-        cursor.execute("DELETE FROM processed_videos WHERE video_id = ?", (video_id,))
-        cursor.execute("DELETE FROM candidate_videos WHERE video_id = ?", (video_id,))
-        cursor.execute("DELETE FROM system_logs WHERE video_id = ?", (video_id,))
-        conn.commit()
+        try:
+            cursor.execute("DELETE FROM clips WHERE video_id = ?", (video_id,))
+            cursor.execute("DELETE FROM processed_videos WHERE video_id = ?", (video_id,))
+            cursor.execute("DELETE FROM candidate_videos WHERE video_id = ?", (video_id,))
+            cursor.execute("DELETE FROM system_logs WHERE video_id = ?", (video_id,))
+            conn.commit()
+        except Exception as db_err:
+            conn.rollback()
+            logger.error("Failed DB deletion transaction for video_id '%s': %s", video_id, str(db_err))
+            raise db_err
 
     freed_mb = round(freed_bytes / (1024 * 1024), 2)
     logger.info("Deleted video_id '%s' and freed %.2f MB on VPS storage", video_id, freed_mb)

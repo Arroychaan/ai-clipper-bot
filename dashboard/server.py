@@ -74,7 +74,7 @@ def get_dashboard_html():
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def get_admin_html():
+def get_admin_html(username: str = Depends(check_auth)):
     """Serves the Admin System Log Inspector HTML interface."""
     admin_file = TEMPLATES_DIR / "admin.html"
     if not admin_file.exists():
@@ -319,13 +319,28 @@ def api_regenerate_vps_clip(video_id: str, background_tasks: BackgroundTasks):
 
 @app.post("/api/vps/clean-temp")
 def api_clean_vps_temp():
-    """Cleans all temporary files in temp/ directory to free up disk space while preserving clips."""
+    """Cleans all temporary files in temp/ directory to free up disk space while preserving clips, skipping active render files."""
     from config import TEMP_DIR
+    from core.db_manager import get_connection
     import os
+
+    active_video_ids = set()
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT video_id FROM processed_videos WHERE status = 'PROCESSING'")
+            active_video_ids = {row["video_id"] for row in cursor.fetchall()}
+    except Exception:
+        pass
+
     freed_bytes = 0
     deleted_count = 0
     if os.path.exists(TEMP_DIR):
         for f in os.listdir(TEMP_DIR):
+            # Do not delete temp files belonging to currently active processing video
+            if any(v_id and v_id in f for v_id in active_video_ids):
+                continue
+
             fp = os.path.join(TEMP_DIR, f)
             if os.path.isfile(fp):
                 sz = os.path.getsize(fp)

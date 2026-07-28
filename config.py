@@ -96,6 +96,7 @@ import base64
 YOUTUBE_CLIENT_SECRETS_FILE: Path = TOKENS_DIR / "client_secrets.json"
 YOUTUBE_TOKEN_FILE: Path = TOKENS_DIR / "youtube_token.json"
 YOUTUBE_COOKIES_FILE: Path = TOKENS_DIR / "youtube_cookies.txt"
+TIKTOK_COOKIES_FILE: Path = TOKENS_DIR / "tiktok_cookies.txt"
 _default_yt_cookie = TOKENS_DIR / ("cookies-youtube-lokal.txt" if TARGET_LANGUAGE == "id" else "cookies-youtube-global.txt")
 if not YOUTUBE_COOKIES_FILE.exists() and _default_yt_cookie.exists():
     YOUTUBE_COOKIES_FILE = _default_yt_cookie

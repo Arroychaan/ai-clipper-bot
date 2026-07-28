@@ -8,8 +8,9 @@ import os
 import sys
 import time
 import glob
+import shutil
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from config import (
     LOG_FILE_PATH,
@@ -64,10 +65,11 @@ def cleanup_temp_workspace() -> None:
                 logger.warning("Failed to remove temp file '%s': %s", filepath, str(e))
 
 
-def ensure_disk_space(path: str = "/", minimum_gb: float = 8.0) -> None:
+def ensure_disk_space(path: Optional[str] = None, minimum_gb: float = 8.0) -> None:
     """Verifies that the VPS has at least minimum_gb free disk space before proceeding."""
+    check_path = path or str(TEMP_DIR)
     try:
-        _, _, free = shutil.diskusage(path)
+        _, _, free = shutil.disk_usage(check_path)
         free_gb = free / (1024 ** 3)
         if free_gb < minimum_gb:
             raise RuntimeError(f"Ruang disk tersisa {free_gb:.1f} GB; minimum yang diperlukan {minimum_gb:.1f} GB.")
@@ -82,16 +84,28 @@ def process_single_video(
     force_gaming_mode: bool = False
 ) -> bool:
     """
-    Executes the clipping pipeline for a single YouTube video.
+    2026 Multimodal Clipping Pipeline.
+
+    10-Step Pipeline:
+    1. Initialize & disk check
+    2. Fetch transcript (YouTube captions or Groq Whisper)
+    3. Download video stream
+    4. Extract keyframes (FFmpeg → JPEG)
+    5. Scene detection (PySceneDetect)
+    6. Vision AI analysis (Groq qwen3.6-27b)
+    7. Audio energy peak detection
+    8. Multimodal clip selection (Llama 3.3 70B + Vision + Audio + Scene fusion)
+    9. Dynamic facecam tracking (YuNet + EMA smoothing)
+    10. Render 1080x1920 split-screen (CRF 18, lanczos, color grading)
+
     Guarantees atomic file cleanup using try...finally.
     """
     video_id = video_item.get("id") or video_item.get("video_id") or ""
     video_url = video_item["url"]
     video_title = video_item.get("title", "YouTube Video")
 
-    ensure_disk_space("/", MINIMUM_FREE_DISK_GB)
+    ensure_disk_space(str(TEMP_DIR), MINIMUM_FREE_DISK_GB)
 
-    
     logger.info("==================================================")
     import traceback
     from core.db_manager import add_system_log
@@ -99,29 +113,26 @@ def process_single_video(
     logger.info("Processing Candidate Video: %s (%s)", video_title, video_url)
     logger.info("==================================================")
 
-    # 1. Update DB state to PROCESSING
+    # STEP 1: Initialize
     msg_start = f"Inisialisasi pemrosesan klip instan untuk video '{video_title}' ({video_id})"
-    logger.info("👉 [STEP 1/6] %s", msg_start)
-    add_system_log(video_id, "INFO", "[STEP 1/6]", msg_start)
+    logger.info("👉 [STEP 1/10] %s", msg_start)
+    add_system_log(video_id, "INFO", "[STEP 1/10]", msg_start)
     mark_status(video_id, "PROCESSING")
 
     audio_path = None
     video_path = None
-    sub_path = None
-    output_clip_path = None
 
     try:
-        # 2. Get video transcript
-        msg_trans = f"Mengambil transkrip/subtitel YouTube..."
-        logger.info("👉 [STEP 2/6] %s", msg_trans)
+        # STEP 2: Get video transcript
+        msg_trans = "Mengambil transkrip/subtitel YouTube..."
+        logger.info("👉 [STEP 2/10] %s", msg_trans)
         transcript_data = YouTubeFetcher.fetch_transcript(video_id)
 
-        
         audio_path = None
         if not transcript_data:
-            msg_whisper = "Transkrip langsung tidak tersedia. Mengunduh audio & menggunakan Groq Whisper Large v3..."
+            msg_whisper = "Transkrip tidak tersedia. Mengunduh audio & menggunakan Groq Whisper Large v3..."
             logger.info("👉 %s", msg_whisper)
-            add_system_log(video_id, "INFO", "[STEP 2/6]", msg_whisper)
+            add_system_log(video_id, "INFO", "[STEP 2/10]", msg_whisper)
             try:
                 _, audio_path = YouTubeFetcher.download_audio(video_url)
                 transcript_data = groq_client.transcribe_audio(audio_path)
@@ -129,29 +140,110 @@ def process_single_video(
                 tb_audio = traceback.format_exc()
                 err_msg = f"Gagal mengunduh/transkrip audio: {str(audio_err)}"
                 logger.warning(err_msg)
-                add_system_log(video_id, "ERROR", "[STEP 2/6]", err_msg, tb_audio)
+                add_system_log(video_id, "ERROR", "[STEP 2/10]", err_msg, tb_audio)
                 return False
 
-        # 3. Extract multiple viral clips (5 to 20 clips) via Groq Llama 3.3 70B
-        msg_ai = "Mengevaluasi & mengekstrak 5-20 momen klip viral terbaik (Skor >= 95) via Groq Llama 3.3 70B..."
-        logger.info("👉 [STEP 3/6] %s", msg_ai)
-        add_system_log(video_id, "INFO", "[STEP 3/6]", msg_ai)
-        
-        viral_clips = groq_client.extract_multiple_viral_clips(transcript_data)
-        
+        # STEP 3: Download video stream (full or sliced)
+        msg_dl = "Mengunduh aliran video untuk analisis visual..."
+        logger.info("👉 [STEP 3/10] %s", msg_dl)
+        add_system_log(video_id, "INFO", "[STEP 3/10]", msg_dl)
+        video_path = YouTubeFetcher.download_video_stream(video_url)
+
+        from core.fetcher import is_valid_mp4_video
+        if not is_valid_mp4_video(video_path):
+            logger.warning("⚠️ Corrupted video stream. Re-downloading...")
+            if os.path.exists(video_path):
+                try:
+                    os.remove(video_path)
+                except Exception:
+                    pass
+            video_path = YouTubeFetcher.download_video_stream(video_url)
+
+        # STEP 4: Extract keyframes for Vision AI
+        msg_kf = "Mengekstrak keyframe untuk analisis Vision AI..."
+        logger.info("👉 [STEP 4/10] %s", msg_kf)
+        add_system_log(video_id, "INFO", "[STEP 4/10]", msg_kf)
+
+        from core.vision_analyzer import extract_keyframes, analyze_keyframes_with_vision, find_highlight_windows, cleanup_keyframes
+        keyframes = extract_keyframes(video_path, interval_sec=3.0, max_frames=30)
+
+        # STEP 5: Scene detection
+        msg_scene = "Mendeteksi batas scene (OBS transitions, camera switches)..."
+        logger.info("👉 [STEP 5/10] %s", msg_scene)
+        add_system_log(video_id, "INFO", "[STEP 5/10]", msg_scene)
+
+        from core.scene_detector import detect_scene_boundaries
+        scene_boundaries = detect_scene_boundaries(video_path)
+
+        # STEP 6: Vision AI analysis
+        msg_vision = "Menganalisis keyframe via Groq Vision AI (qwen3.6-27b)..."
+        logger.info("👉 [STEP 6/10] %s", msg_vision)
+        add_system_log(video_id, "INFO", "[STEP 6/10]", msg_vision)
+
+        vision_results = []
+        vision_highlights = []
+        try:
+            vision_results = analyze_keyframes_with_vision(keyframes, groq_client)
+            vision_highlights = find_highlight_windows(vision_results)
+        except Exception as vision_err:
+            logger.warning("Vision AI analysis failed (falling back to text-only): %s", str(vision_err)[:200])
+
+        # Cleanup keyframe files immediately after analysis
+        cleanup_keyframes(keyframes)
+
+        # STEP 7: Audio energy peak detection
+        msg_audio = "Mendeteksi audio energy peaks (screams, jumpscares, laughter)..."
+        logger.info("👉 [STEP 7/10] %s", msg_audio)
+        add_system_log(video_id, "INFO", "[STEP 7/10]", msg_audio)
+
+        from core.audio_processor import detect_audio_reaction_peaks
+        if not (audio_path and os.path.exists(audio_path)):
+            try:
+                _, audio_path = YouTubeFetcher.download_audio(video_url)
+            except Exception:
+                pass
+
+        # Get total duration for full-video audio analysis
+        full_audio_peaks = []
+        if audio_path and os.path.exists(audio_path):
+            try:
+                from pydub import AudioSegment  # type: ignore
+                audio_seg = AudioSegment.from_file(audio_path)
+                total_audio_dur = len(audio_seg) / 1000.0
+                full_audio_peaks = detect_audio_reaction_peaks(audio_path, 0.0, total_audio_dur)
+            except Exception as ap_err:
+                logger.warning("Full audio peak detection failed: %s", str(ap_err)[:100])
+
+        # STEP 8: Multimodal clip selection
+        msg_ai = "🧠 Menjalankan Multimodal Fusion Clip Selection (Teks + Vision + Audio + Scene)..."
+        logger.info("👉 [STEP 8/10] %s", msg_ai)
+        add_system_log(video_id, "INFO", "[STEP 8/10]", msg_ai)
+
+        # Use multimodal extraction if vision data is available, otherwise fall back to text-only
+        if vision_highlights or full_audio_peaks or scene_boundaries:
+            viral_clips = groq_client.extract_multimodal_viral_clips(
+                transcript_data,
+                vision_highlights=vision_highlights,
+                audio_peaks=full_audio_peaks,
+                scene_boundaries=scene_boundaries
+            )
+        else:
+            logger.info("No multimodal signals available. Falling back to text-only extraction.")
+            viral_clips = groq_client.extract_multiple_viral_clips(transcript_data)
+
         if not viral_clips:
             warn_msg = f"Tidak ditemukan kandidat klip dengan skor viral >= {MIN_VIRAL_SCORE}. Melewati render."
             logger.warning(warn_msg)
-            add_system_log(video_id, "WARNING", "[STEP 3/6]", warn_msg)
+            add_system_log(video_id, "WARNING", "[STEP 8/10]", warn_msg)
             mark_status(video_id, "COMPLETED")
             return True
 
         total_extracted = len(viral_clips)
-        msg_summary = f"🎉 Terdeteksi {total_extracted} klip viral kelas atas (Skor >= 95)! Memulai batch rendering..."
+        msg_summary = f"🎉 Terdeteksi {total_extracted} klip viral kelas atas (Multimodal Fusion)! Memulai batch rendering..."
         logger.info(msg_summary)
-        add_system_log(video_id, "INFO", "[STEP 3/6]", msg_summary)
+        add_system_log(video_id, "INFO", "[STEP 8/10]", msg_summary)
 
-        # Batch loop through each extracted viral clip candidate
+        # Batch render each clip
         rendered_count = 0
         for clip_idx, clip_meta in enumerate(viral_clips, start=1):
             raw_start = clip_meta["start_time"]
@@ -161,94 +253,94 @@ def process_single_video(
             caption = clip_meta.get("caption", title)
             hashtags_str = clip_meta.get("hashtags_str", "#fyp #viral #shorts #trending")
 
-            # 4. Calibrate cut timestamps
-            msg_calib = f"[{clip_idx}/{total_extracted}] Mengalibrasi waktu potong klip '{title}' ({raw_start}s - {raw_end}s)..."
-            logger.info("👉 [STEP 4/6] %s", msg_calib)
-            add_system_log(video_id, "INFO", "[STEP 4/6]", msg_calib)
+            # STEP 9: Calibrate cut timestamps + Dynamic facecam tracking
+            msg_calib = f"[{clip_idx}/{total_extracted}] Mengalibrasi waktu potong & tracking facecam '{title}'..."
+            logger.info("👉 [STEP 9/10] %s", msg_calib)
+            add_system_log(video_id, "INFO", "[STEP 9/10]", msg_calib)
+
             if audio_path and os.path.exists(audio_path):
                 start_sec, end_sec = calibrate_cut_timestamps(audio_path, raw_start, raw_end)
             else:
                 start_sec, end_sec = max(0.0, float(raw_start)), float(raw_end)
             duration = end_sec - start_sec
 
-            # 5. Download video stream slice
-            msg_dl = f"[{clip_idx}/{total_extracted}] Mengunduh aliran video Full HD ({start_sec:.1f}s - {end_sec:.1f}s)..."
-            logger.info("👉 [STEP 5/6] %s", msg_dl)
-            add_system_log(video_id, "INFO", "[STEP 5/6]", msg_dl)
-            video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
+            # Dynamic facecam tracking for this clip's time range
+            dynamic_keyframes = None
+            if force_gaming_mode:
+                from core.facecam_detector import detect_dynamic_facecam_track
+                clip_sample_times = [round(start_sec + i * (duration / 10), 1) for i in range(10)]
+                dynamic_keyframes = detect_dynamic_facecam_track(
+                    video_path,
+                    sample_timestamps_sec=clip_sample_times,
+                    ema_alpha=0.35
+                )
 
-            # Auto Video Stream Integrity Check (pre-render verification)
-            from core.fetcher import is_valid_mp4_video
-            if not is_valid_mp4_video(video_path):
-                logger.warning("⚠️ Corrupted MP4 video stream detected ('moov atom not found'). Removing and re-downloading fresh stream...")
-                if os.path.exists(video_path):
-                    try:
-                        os.remove(video_path)
-                    except Exception:
-                        pass
-                video_path = YouTubeFetcher.download_video_stream(video_url, start_sec, end_sec)
+            # Audio peaks for this specific clip range
+            r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
 
-            # 6. Render Full HD 9:16 vertical short using MediaInput explicit pre-sliced tracking
+            # STEP 10: Render
             clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
             output_clip_path = str(CLIPS_DIR / clip_filename)
 
-            # Subtitle Burning Disabled per User Directive ("jangan berikan subtitle!")
-            sub_ass_path = None
+            from core.ffmpeg_renderer import MediaInput
+            media_input = MediaInput(path=video_path, is_presliced=False, source_start=start_sec)
 
-            from core.ffmpeg_renderer import MediaInput, render_gaming_split_shorts, render_vertical_shorts
-            media_input = MediaInput(path=video_path, is_presliced=True, source_start=start_sec)
+            try:
+                if force_gaming_mode:
+                    msg_render = f"🎮 [{clip_idx}/{total_extracted}] Merender Gaming Split-Screen 2026 (Skor {v_score}) -> {clip_filename}..."
+                    logger.info("👉 [STEP 10/10] %s", msg_render)
+                    add_system_log(video_id, "INFO", "[STEP 10/10]", msg_render)
 
-            if force_gaming_mode:
-                msg_render = f"🎮 [{clip_idx}/{total_extracted}] [MODE WINDAH GAMING] Merender Split-Screen Wayin.ai Killer HD (Skor {v_score}) -> {clip_filename}..."
-                logger.info("👉 [STEP 6/6] %s", msg_render)
-                add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
-                from core.audio_processor import detect_audio_reaction_peaks
-                r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
-                facecam_coords = detect_streamer_facecam(video_path)
-                render_success = render_gaming_split_shorts(
-                    input_video=media_input,
-                    start_time=0.0,
-                    duration=duration,
-                    output_path=output_clip_path,
-                    facecam_coords=facecam_coords,
-                    subtitle_path=sub_ass_path,
-                    hook_title=title,
-                    reaction_peaks=r_peaks
-                )
-            else:
-                msg_render = f"🎙️ [{clip_idx}/{total_extracted}] [MODE PODCAST] Merender Split-Screen Full HD (Skor {v_score}) -> {clip_filename}..."
-                logger.info("👉 [STEP 6/6] %s", msg_render)
-                add_system_log(video_id, "INFO", "[STEP 6/6]", msg_render)
-                render_success = render_vertical_shorts(
-                    input_video=media_input,
-                    start_time=0.0,
-                    duration=duration,
-                    output_path=output_clip_path,
-                    subtitle_path=sub_ass_path
-                )
+                    facecam_coords = detect_streamer_facecam(video_path)
+                    render_success = render_gaming_split_shorts(
+                        input_video=media_input,
+                        start_time=start_sec,
+                        duration=duration,
+                        output_path=output_clip_path,
+                        facecam_coords=facecam_coords,
+                        subtitle_path=None,
+                        hook_title=title,
+                        reaction_peaks=r_peaks,
+                        dynamic_crop_keyframes=dynamic_keyframes
+                    )
+                else:
+                    msg_render = f"🎙️ [{clip_idx}/{total_extracted}] Merender Podcast Split-Screen 2026 (Skor {v_score}) -> {clip_filename}..."
+                    logger.info("👉 [STEP 10/10] %s", msg_render)
+                    add_system_log(video_id, "INFO", "[STEP 10/10]", msg_render)
+                    render_success = render_vertical_shorts(
+                        input_video=media_input,
+                        start_time=start_sec,
+                        duration=duration,
+                        output_path=output_clip_path,
+                        subtitle_path=None
+                    )
 
-            if render_success and os.path.exists(output_clip_path) and os.path.getsize(output_clip_path) >= 100000:
-                clip_id = f"{video_id}_{int(start_sec)}"
-                save_clip(
-                    clip_id=clip_id,
-                    video_id=video_id,
-                    video_title=video_url,
-                    clip_title=title,
-                    caption=caption,
-                    hashtags=hashtags_str,
-                    viral_score=v_score,
-                    duration=duration,
-                    clip_path=clip_filename
-                )
-                rendered_count += 1
-                add_system_log(video_id, "INFO", "[STEP 6/6]", f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil dibuat!")
+                if render_success and os.path.exists(output_clip_path) and os.path.getsize(output_clip_path) >= 100000:
+                    clip_id = f"{video_id}_{int(start_sec)}"
+                    save_clip(
+                        clip_id=clip_id,
+                        video_id=video_id,
+                        video_title=video_url,
+                        clip_title=title,
+                        caption=caption,
+                        hashtags=hashtags_str,
+                        viral_score=v_score,
+                        duration=duration,
+                        clip_path=clip_filename
+                    )
+                    rendered_count += 1
+                    reason = clip_meta.get("selection_reason", "multimodal fusion")
+                    add_system_log(video_id, "INFO", "[STEP 10/10]",
+                                   f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil! Alasan: {reason}")
+            except Exception as render_err:
+                logger.warning("Render failed for clip %d: %s", clip_idx, str(render_err)[:200])
+                add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render gagal untuk klip {clip_idx}: {str(render_err)[:200]}")
 
         mark_status(video_id, "COMPLETED")
-        msg_done = f"🎉 Batch pemrosesan selesai! {rendered_count} klip viral (Skor >= 95) berhasil dirender & disimpan ke Dashboard!"
+        msg_done = f"🎉 Batch selesai! {rendered_count}/{total_extracted} klip viral berhasil dirender (Multimodal 2026)!"
         logger.info(msg_done)
         add_system_log(video_id, "INFO", "COMPLETED", msg_done)
         return True
-
 
     except Exception as e:
         tb_str = traceback.format_exc()

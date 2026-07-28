@@ -401,6 +401,8 @@
       }
     }
 
+    let pendingTargetMode = null;
+
     function requestSwitchMode(targetMode) {
       const currentMode = localStorage.getItem('bot_mode') || 'PODCAST';
       if (targetMode === currentMode) return;
@@ -507,8 +509,8 @@
         if (statsRes.ok) {
           const stats = await statsRes.json();
           document.getElementById('statTotal').innerText = stats.total_clips || 0;
-          document.getElementById('statReady').innerText = stats.ready_clips || 0;
-          document.getElementById('statPosted').innerText = stats.posted_clips || 0;
+          document.getElementById('statReady').innerText = (stats.ready_clips !== undefined ? stats.ready_clips : stats.ready_to_post) || 0;
+          document.getElementById('statPosted').innerText = (stats.posted_clips !== undefined ? stats.posted_clips : stats.posted) || 0;
           document.getElementById('statAvgScore').innerText = (stats.avg_viral_score || 0).toFixed(1);
         }
 
