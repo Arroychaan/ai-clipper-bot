@@ -56,9 +56,71 @@ COBALT_INSTANCES = [
 ]
 
 
+def _fetch_youtubei_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Directly queries YouTube's official InnerTube API using ANDROID_VR and TVHTML5 client contexts.
+    ANDROID_VR and TVHTML5 clients do NOT enforce PO Tokens or Signature Deciphering.
+    Returns direct unencrypted googlevideo.com CDN stream URLs for audio and video.
+    """
+    import urllib.request
+    import json
+    import ssl
+
+    ssl_ctx = ssl._create_unverified_context()
+    url = "https://www.youtube.com/youtubei/v1/player"
+
+    clients = [
+        {"clientName": "ANDROID_VR", "clientVersion": "1.58.1", "deviceModel": "Quest 3"},
+        {"clientName": "TVHTML5", "clientVersion": "7.20260715.00.00", "deviceModel": "SmartTV"},
+        {"clientName": "ANDROID", "clientVersion": "19.29.37", "osName": "Android", "osVersion": "14"},
+        {"clientName": "IOS", "clientVersion": "19.29.1", "osName": "iOS", "osVersion": "17.5.1"}
+    ]
+
+    for c in clients:
+        payload = {
+            "videoId": video_id,
+            "context": {
+                "client": c
+            }
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.youtube.com/"
+        }
+        try:
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    s_data = data.get("streamingData", {})
+                    formats = s_data.get("adaptiveFormats", []) + s_data.get("formats", [])
+
+                    audio_url = None
+                    video_url = None
+
+                    for f in formats:
+                        url_val = f.get("url")
+                        if not url_val:
+                            continue
+                        mime = str(f.get("mimeType", ""))
+                        if "audio/" in mime and not audio_url:
+                            audio_url = url_val
+                        if "video/mp4" in mime and not video_url:
+                            video_url = url_val
+
+                    if audio_url or video_url:
+                        logger.info("✅ Extracted direct YouTube InnerTube stream URLs (client=%s)", c["clientName"])
+                        return audio_url, video_url
+        except Exception as e:
+            logger.debug("InnerTube client %s failed: %s", c["clientName"], str(e)[:100])
+
+    return None, None
+
+
 def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Queries public Invidious, Piped, and Cobalt API instances to extract direct audio and video stream URLs.
+    Queries InnerTube API, Invidious, Piped, and Cobalt API instances to extract direct audio and video stream URLs.
     100% Bypasses YouTube datacenter IP blocks on VPS.
 
     Returns: (audio_url, video_url)
@@ -67,14 +129,21 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
     import json
     import ssl
 
-    # Create unverified SSL context to prevent SSL: CERTIFICATE_VERIFY_FAILED errors on Linux VPS
-    ssl_ctx = ssl._create_unverified_context()
+    # 1. Try Direct InnerTube API (ANDROID_VR / TVHTML5) - Highest Priority
+    try:
+        a_url, v_url = _fetch_youtubei_stream_urls(video_id)
+        if a_url or v_url:
+            return a_url, v_url
+    except Exception as e_it:
+        logger.debug("InnerTube stream extraction failed: %s", str(e_it)[:100])
 
+    ssl_ctx = ssl._create_unverified_context()
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.youtube.com/"
     }
 
-    # 1. Try Invidious Instances
+    # 2. Try Invidious Instances
     for instance in INVIDIOUS_INSTANCES:
         api_url = f"{instance}/api/v1/videos/{video_id}"
         try:
@@ -88,7 +157,6 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
                     audio_url = None
                     video_url = None
 
-                    # Check both 'mimeType' and 'type' keys (Invidious API compatibility)
                     audio_formats = [
                         f for f in adaptive
                         if (str(f.get("mimeType", "") or f.get("type", "")).startswith("audio/")) and f.get("url")
@@ -124,7 +192,7 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
         except Exception as e:
             logger.debug("Invidious instance %s failed: %s", instance, str(e)[:100])
 
-    # 2. Try Piped Instances
+    # 3. Try Piped Instances
     for p_instance in PIPED_INSTANCES:
         api_url = f"{p_instance}/streams/{video_id}"
         try:
@@ -162,7 +230,7 @@ def _fetch_proxy_stream_urls(video_id: str) -> Tuple[Optional[str], Optional[str
         except Exception as e:
             logger.debug("Piped instance %s failed: %s", p_instance, str(e)[:100])
 
-    # 3. Try Cobalt API
+    # 4. Try Cobalt API
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
     cob_headers = {
         "Content-Type": "application/json",
@@ -657,7 +725,18 @@ class YouTubeFetcher:
 
         def _ffmpeg_slice_from_url(stream_url: str) -> bool:
             """Slice video from stream URL using FFmpeg. Returns True if successful."""
-            ffmpeg_cmd = ["ffmpeg", "-y"]
+            headers_str = (
+                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+                "Referer: https://www.youtube.com/\r\n"
+                "Origin: https://www.youtube.com\r\n"
+            )
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-headers", headers_str,
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5"
+            ]
             if start_s > 0:
                 ffmpeg_cmd.extend(["-ss", f"{start_s:.2f}"])
             if dur_s:
