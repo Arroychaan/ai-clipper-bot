@@ -41,8 +41,10 @@ def _escape_ffmpeg_path(path: str) -> str:
 
 
 def _get_video_info(video_path: str) -> tuple:
-    """Gets exact (width, height, duration, fps) of a video file."""
+    """Gets exact (width, height, duration, fps) of a video file or stream URL."""
     w, h, dur, fps = 1920, 1080, 0.0, 30.0
+    if video_path.startswith("http://") or video_path.startswith("https://"):
+        return 1920, 1080, 0.0, 30.0
     try:
         import cv2  # type: ignore
         cap = cv2.VideoCapture(video_path)
@@ -73,27 +75,25 @@ def render_vertical_shorts(
     """
     media = input_video if isinstance(input_video, MediaInput) else MediaInput(path=input_video, is_presliced=False)
     v_path = media.path
+    is_url = v_path.startswith("http://") or v_path.startswith("https://")
 
-    if not os.path.exists(v_path):
+    if not is_url and not os.path.exists(v_path):
         logger.error("Input video file does not exist: %s", v_path)
         return False
 
     in_w, in_h, in_dur, in_fps = _get_video_info(v_path)
-    render_start = 0.0 if (media.is_presliced or (in_dur > 0 and (in_dur < start_time or in_dur <= (duration + 60.0)))) else max(0.0, start_time)
+    render_start = 0.0 if media.is_presliced else max(0.0, start_time)
+    render_duration = max(5.0, duration)
 
     logger.info(
         "Rendering Podcast Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
-        render_start, duration, output_path
+        render_start, render_duration, output_path
     )
 
-    # Podcast layout matches gaming layout (3:4 ratio)
-    # TOP: 1080x824 (facecam or person 1)
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=824:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:824,unsharp=3:3:0.4:3:3:0.0[top]"
-    # BOTTOM: 1080x1096 (person 2 or gameplay)
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1096,unsharp=3:3:0.4:3:3:0.0[bottom]"
+    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=824:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:824[top]"
+    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:1096[bottom]"
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
     
-    # Divider line at the boundary (y=820)
     divider_filter = (
         f"[stacked]drawbox=y=820:color=cyan@0.85:width=iw:height=8:t=fill,"
         f"drawbox=y=822:color=white@0.95:width=iw:height=4:t=fill[outv]"
@@ -101,26 +101,40 @@ def render_vertical_shorts(
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
-    cmd = [
-        "ffmpeg", "-y",
+    input_args = []
+    if is_url:
+        headers_str = (
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+            "Referer: https://www.youtube.com/\r\n"
+            "Origin: https://www.youtube.com\r\n"
+        )
+        input_args = [
+            "-headers", headers_str,
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5"
+        ]
+
+    cmd = ["ffmpeg", "-y"]
+    cmd.extend(input_args)
+    cmd.extend([
         "-ss", f"{render_start:.2f}",
-        "-t", f"{duration:.2f}",
+        "-t", f"{render_duration:.2f}",
         "-i", v_path,
-        "-filter_complex_threads", "1",
         "-filter_complex", filter_complex,
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "18",
+        "-preset", "veryfast",
+        "-crf", "20",
         "-pix_fmt", "yuv420p",
-        "-threads", "1",
+        "-threads", "2",
         "-movflags", "+faststart",
         "-shortest",
         "-c:a", "aac",
         "-b:a", "128k",
         output_path
-    ]
+    ])
     try:
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=900)
         return True
@@ -142,42 +156,20 @@ def render_gaming_split_shorts(
 ) -> bool:
     """
     2026 Production-Grade Gaming Split-Screen Renderer (1080x1920).
-
-    Features:
-      - Dynamic facecam tracking (if crop keyframes provided)
-      - Quality enhancement: CRF 18, preset fast, lanczos, color grading
-      - Gameplay saliency center-crop
-      - Single-thread mode for VPS 2GB
     """
     media = input_video if isinstance(input_video, MediaInput) else MediaInput(path=input_video, is_presliced=False)
     v_path = media.path
+    is_url = v_path.startswith("http://") or v_path.startswith("https://")
 
-    if not os.path.exists(v_path):
+    if not is_url and not os.path.exists(v_path):
         logger.error("Input video file does not exist: %s", v_path)
         return False
 
     in_w, in_h, in_dur, in_fps = _get_video_info(v_path)
-    render_start = 0.0 if (media.is_presliced or (in_dur > 0 and (in_dur < start_time or in_dur <= (duration + 60.0)))) else max(0.0, start_time)
+    render_start = 0.0 if media.is_presliced else max(0.0, start_time)
+    render_duration = max(5.0, duration)
 
-    if in_dur > 0:
-        if render_start >= in_dur:
-            logger.warning("Render start_time (%.2fs) exceeds video duration (%.2fs). Resetting to 0.0s.", render_start, in_dur)
-            render_start = 0.0
-        available_dur = in_dur - render_start
-        render_duration = min(duration, available_dur)
-    else:
-        render_duration = duration
-
-    if render_duration < 1.0:
-        logger.error("Invalid render duration (%.2fs). Aborting render.", render_duration)
-        return False
-
-    # Determine facecam crop coordinates
-    # If dynamic keyframes are available, use the median position for the single-pass FFmpeg filter
-    # (Full per-frame dynamic crop requires sendcmd filter which is complex;
-    #  we use the smoothed median from the dynamic tracker for reliability)
     if dynamic_crop_keyframes and len(dynamic_crop_keyframes) > 0:
-        # Use median keyframe for stability
         mid_idx = len(dynamic_crop_keyframes) // 2
         kf = dynamic_crop_keyframes[mid_idx]
         fc = {
@@ -186,10 +178,13 @@ def render_gaming_split_shorts(
             "crop_x": kf.crop_x,
             "crop_y": kf.crop_y
         }
-        logger.info("Using dynamic tracker median keyframe [%d/%d] at t=%.1fs for facecam crop",
-                     mid_idx + 1, len(dynamic_crop_keyframes), kf.timestamp_sec)
     else:
         fc = facecam_coords or {"crop_w": 640, "crop_h": 533, "crop_x": 0, "crop_y": 0}
+
+    raw_cw = int(fc.get("crop_w", 640))
+    raw_ch = int(fc.get("crop_h", 533))
+    raw_cx = int(fc.get("crop_x", 0))
+    raw_cy = int(fc.get("crop_y", 0))
 
     padded_w = in_w + 1000
     padded_h = in_h + 1000
@@ -199,9 +194,6 @@ def render_gaming_split_shorts(
     cx = max(0, min(padded_w - cw, raw_cx))
     cy = max(0, min(padded_h - ch, raw_cy))
 
-    logger.info("Padded Facecam Crop (%dx%d padded): crop=%d:%d:%d:%d (Start: %.2fs, Duration: %.2fs)",
-                padded_w, padded_h, cw, ch, cx, cy, render_start, render_duration)
-
     # TOP (3 parts = 824px): 500px Padded Facecam crop → scale to 1080x824 → 100% ABSOLUTE DEAD CENTER
     top_filter = (
         f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
@@ -210,7 +202,7 @@ def render_gaming_split_shorts(
         f"[top]"
     )
 
-    # BOTTOM (4 parts = 1096px): Gameplay — center crop (saliency-aware: center 75% width)
+    # BOTTOM (4 parts = 1096px): Gameplay — center crop
     gameplay_crop_w = int(in_w * 0.75)
     gameplay_crop_x = (in_w - gameplay_crop_w) // 2
     bottom_filter = (
@@ -222,7 +214,6 @@ def render_gaming_split_shorts(
 
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
 
-    # Divider line at the boundary (y=820, just before bottom starts at 824)
     divider_color = "red@0.95" if reaction_peaks else "cyan@0.85"
     divider_filter = (
         f"[stacked]drawbox=y=820:color={divider_color}:width=iw:height=8:t=fill,"
@@ -231,8 +222,23 @@ def render_gaming_split_shorts(
 
     filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
-    cmd = [
-        "ffmpeg", "-y",
+    input_args = []
+    if is_url:
+        headers_str = (
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+            "Referer: https://www.youtube.com/\r\n"
+            "Origin: https://www.youtube.com\r\n"
+        )
+        input_args = [
+            "-headers", headers_str,
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5"
+        ]
+
+    cmd = ["ffmpeg", "-y"]
+    cmd.extend(input_args)
+    cmd.extend([
         "-ss", f"{render_start:.2f}",
         "-t", f"{render_duration:.2f}",
         "-i", v_path,
@@ -249,7 +255,7 @@ def render_gaming_split_shorts(
         "-c:a", "aac",
         "-b:a", "128k",
         output_path
-    ]
+    ])
 
     logger.info("Executing 2026 Production Gaming Split-Screen render (preset veryfast, 2GB VPS optimized)...")
     try:
