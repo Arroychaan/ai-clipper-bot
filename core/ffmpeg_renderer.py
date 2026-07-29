@@ -206,9 +206,7 @@ def render_gaming_split_shorts(
     top_filter = (
         f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
         f"[padded]crop={cw}:{ch}:{cx}:{cy},"
-        f"scale=1080:824:flags=lanczos,"
-        f"unsharp=3:3:0.6:3:3:0.0,"
-        f"eq=brightness=0.02:contrast=1.05:saturation=1.15"
+        f"scale=1080:824:flags=bicubic"
         f"[top]"
     )
 
@@ -217,10 +215,8 @@ def render_gaming_split_shorts(
     gameplay_crop_x = (in_w - gameplay_crop_w) // 2
     bottom_filter = (
         f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,"
-        f"scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,"
-        f"crop=1080:1096,"
-        f"unsharp=3:3:0.4:3:3:0.0,"
-        f"eq=brightness=0.01:contrast=1.03:saturation=1.10"
+        f"scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=bicubic,"
+        f"crop=1080:1096"
         f"[bottom]"
     )
 
@@ -240,23 +236,22 @@ def render_gaming_split_shorts(
         "-ss", f"{render_start:.2f}",
         "-t", f"{render_duration:.2f}",
         "-i", v_path,
-        "-filter_complex_threads", "1",
         "-filter_complex", filter_complex,
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "18",
+        "-preset", "veryfast",
+        "-crf", "20",
         "-pix_fmt", "yuv420p",
-        "-threads", "1",
+        "-threads", "2",
         "-movflags", "+faststart",
         "-shortest",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "128k",
         output_path
     ]
 
-    logger.info("Executing 2026 Production Gaming Split-Screen render (CRF 18, lanczos, color grading)...")
+    logger.info("Executing 2026 Production Gaming Split-Screen render (preset veryfast, 2GB VPS optimized)...")
     try:
         subprocess.run(
             cmd,
@@ -268,30 +263,21 @@ def render_gaming_split_shorts(
         )
         logger.info("Gaming Split-Screen render completed successfully: %s", output_path)
         return True
-    except subprocess.TimeoutExpired as te:
-        raise RuntimeError(f"FFmpeg Gaming Split-Screen render timed out after 900s: {output_path}") from te
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr[-600:] if e.stderr else str(e)
-        logger.warning("Gaming Split-Screen primary render failed (%s). Retrying fallback...", err_msg)
+        logger.warning("Gaming Split-Screen primary render failed (%s). Retrying minimal fallback...", err_msg)
 
-        # Simplified fallback without color grading (3:4 ratio + 500px padded dead-center preserved)
-        top_fallback = f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded]; [padded]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=lanczos[top]"
-        bottom_fallback = "[0:v]scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1096[bottom]"
-        filter_fallback = f"{top_fallback}; {bottom_fallback}; {stack_filter}; {divider_filter}"
-
+        # Minimal fallback
         fallback_cmd = [
             "ffmpeg", "-y",
             "-ss", f"{render_start:.2f}",
             "-t", f"{render_duration:.2f}",
             "-i", v_path,
-            "-filter_complex", filter_fallback,
-            "-map", "[outv]",
-            "-map", "0:a?",
+            "-filter_complex", filter_complex,
             "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "20",
+            "-preset", "superfast",
+            "-crf", "22",
             "-threads", "1",
-            "-shortest",
             "-c:a", "aac",
             "-b:a", "128k",
             output_path
@@ -308,9 +294,6 @@ def render_gaming_split_shorts(
             )
             logger.info("Gaming Split-Screen fallback render completed: %s", output_path)
             return True
-        except subprocess.CalledProcessError as fb_err:
-            fb_msg = fb_err.stderr[-800:] if fb_err.stderr else str(fb_err)
-            raise RuntimeError(f"FFmpeg Gaming Split-Screen render failed: {fb_msg}") from fb_err
         except Exception as fb_ex:
             raise RuntimeError(f"Fallback Gaming Split-Screen error: {str(fb_ex)}") from fb_ex
     except Exception as e:

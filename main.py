@@ -332,9 +332,14 @@ def process_single_video(
                     reason = clip_meta.get("selection_reason", "multimodal fusion")
                     add_system_log(video_id, "INFO", "[STEP 10/10]",
                                    f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil! Alasan: {reason}")
+                else:
+                    err_reason = f"Render returned success={render_success}, file_exists={os.path.exists(output_clip_path)}"
+                    logger.warning("Render output invalid for clip %d: %s", clip_idx, err_reason)
+                    add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render klip {clip_idx} tidak menghasilkan file valid: {err_reason}")
             except Exception as render_err:
-                logger.warning("Render failed for clip %d: %s", clip_idx, str(render_err)[:200])
-                add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render gagal untuk klip {clip_idx}: {str(render_err)[:200]}")
+                tb_render = traceback.format_exc()
+                logger.warning("Render failed for clip %d: %s\n%s", clip_idx, str(render_err)[:200], tb_render)
+                add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render gagal untuk klip {clip_idx}: {str(render_err)[:200]}", tb_render)
 
         mark_status(video_id, "COMPLETED")
         msg_done = f"🎉 Batch selesai! {rendered_count}/{total_extracted} klip viral berhasil dirender (Multimodal 2026)!"
