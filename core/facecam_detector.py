@@ -123,7 +123,7 @@ def _detect_faces_in_frame(
             fc_x = fx + fw // 2
             fc_y = fy + fh // 2
 
-            # Verify skin tone
+            # Verify skin tone (only filter out very low confidence non-skin detections)
             pad_w = int(fw * 0.5)
             pad_h = int(fh * 0.5)
             x1, y1 = max(0, fx - pad_w), max(0, fy - pad_h)
@@ -131,7 +131,9 @@ def _detect_faces_in_frame(
             face_crop = frame[y1:y2, x1:x2]
             skin_density = _calculate_skin_density(face_crop)
 
-            if skin_density < 0.05:
+            # High confidence YuNet DNN face detections (conf >= 0.25) are valid faces.
+            # Only apply skin density filter for very low confidence detections (< 0.25).
+            if conf < 0.25 and skin_density < 0.02:
                 continue
 
             results.append((float(fc_x), float(fc_y), float(fw), float(fh), conf, skin_density))
@@ -331,12 +333,15 @@ def detect_dynamic_facecam_track(
         all_detected_faces = [f for _, faces in keyframe_faces for f in faces]
 
         if not all_detected_faces:
-            logger.warning("No faces detected in any keyframe. Using fallback corner analysis.")
-            def_w = int(video_width * 0.25)
+            logger.warning("No faces detected in any keyframe. Using fallback bottom-right streamer facecam region.")
+            def_w = int(video_width * 0.35)
             def_h = int(def_w * (824 / 1080))
+            # Default to bottom-right of video in padded coordinate space (+500 offset)
+            def_cx_padded = int(video_width * 0.85) + PAD_OFFSET - def_w // 2
+            def_cy_padded = int(video_height * 0.80) + PAD_OFFSET - def_h // 2
             return [CropKeyframe(
                 timestamp_sec=0.0,
-                crop_x=0, crop_y=0,
+                crop_x=def_cx_padded, crop_y=def_cy_padded,
                 crop_w=def_w, crop_h=def_h,
                 confidence=0.0, skin_density=0.0
             )]

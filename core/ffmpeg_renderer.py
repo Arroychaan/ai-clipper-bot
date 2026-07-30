@@ -296,6 +296,13 @@ def render_gaming_split_shorts(
     raw_cx = int(fc.get("crop_x", 0))
     raw_cy = int(fc.get("crop_y", 0))
 
+    # If coordinates are zero/uninitialized, default to Windah's standard bottom-right facecam region in padded space
+    if raw_cx == 0 and raw_cy == 0:
+        raw_cw = int(in_w * 0.35)
+        raw_ch = int(raw_cw * 824 / 1080)
+        raw_cx = int(in_w * 0.85) + 500 - raw_cw // 2
+        raw_cy = int(in_h * 0.80) + 500 - raw_ch // 2
+
     padded_w = in_w + 1000
     padded_h = in_h + 1000
 
@@ -385,11 +392,12 @@ def render_gaming_split_shorts(
         except Exception:
             pass
 
-    # Simpler filter: just split left-half / right-half without padding
+    # Simpler filter: use detected facecam crop for top half, center crop gameplay for bottom half
     simple_split_filter = (
-        "[0:v]crop=iw/3:ih:0:0,scale=1080:824:flags=fast_bilinear[top];"
-        "[0:v]crop=iw*2/3:ih:iw/3:0,scale=1080:1096:flags=fast_bilinear,crop=1080:1096[bottom];"
-        "[top][bottom]vstack=inputs=2[outv]"
+        f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
+        f"[padded]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=fast_bilinear[top];"
+        f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1096[bottom];"
+        f"[top][bottom]vstack=inputs=2[outv]"
     )
 
     fallback1_cmd = ["ffmpeg", "-y"]
