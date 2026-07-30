@@ -53,7 +53,36 @@ TARGET_HEIGHT: int = 1920
 MIN_CLIP_DURATION: float = 60.0
 MAX_CLIP_DURATION: float = 90.0
 MIN_VIRAL_SCORE: int = int(os.getenv("MIN_VIRAL_SCORE", "95"))
-MINIMUM_FREE_DISK_GB: float = float(os.getenv("MINIMUM_FREE_DISK_GB", "8.0"))
+MINIMUM_FREE_DISK_GB: float = float(os.getenv("MINIMUM_FREE_DISK_GB", "2.0"))
+
+# Low RAM Mode: Auto-detect or force via env. Enables ultra-light rendering settings.
+def _detect_low_ram() -> bool:
+    """Auto-detect if running on a low-RAM server (≤ 2GB)."""
+    env_val = os.getenv("LOW_RAM_MODE", "auto").lower()
+    if env_val in ("true", "1", "yes"):
+        return True
+    if env_val in ("false", "0", "no"):
+        return False
+    # Auto-detect
+    try:
+        import psutil  # type: ignore
+        total_gb = psutil.virtual_memory().total / (1024 ** 3)
+        return total_gb <= 2.5
+    except ImportError:
+        pass
+    # Fallback: check /proc/meminfo on Linux
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    kb = int(line.split()[1])
+                    return kb <= 2.5 * 1024 * 1024
+    except Exception:
+        pass
+    return True  # Default to True (safe mode) if we can't detect
+
+LOW_RAM_MODE: bool = _detect_low_ram()
+
 
 TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "id").lower()  # 'id' for Indonesia, 'en' for Global market
 

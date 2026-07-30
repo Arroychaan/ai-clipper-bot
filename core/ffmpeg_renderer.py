@@ -2,7 +2,7 @@
 2026 Production-Grade FFmpeg Vertical Video Renderer.
 
 Transforms 16:9 landscape gaming streams into cinematic 9:16 vertical shorts (1080x1920)
-with dynamic facecam tracking, quality enhancement (CRF 18, lanczos, color grading),
+with dynamic facecam tracking, quality enhancement (CRF 23, lanczos, color grading),
 and single-thread optimization for VPS 2GB RAM.
 
 Layout:
@@ -11,13 +11,13 @@ Layout:
   Divider: 8px colored line at y=956
 
 Quality Pipeline:
-  - Encoder: libx264, preset fast, CRF 18
-  - Scaler: lanczos (sharpest)
-  - Sharpening: unsharp 3:3:0.6
-  - Color boost: eq brightness=0.02, contrast=1.05, saturation=1.15
+  - Encoder: libx264, preset ultrafast, CRF 23
+  - Scaler: bicubic (fast, sharp enough)
+  - 1 thread only — safe for 2GB RAM VPS
 """
 
 import os
+import shutil
 import subprocess
 import logging
 from typing import Optional, Union, Dict, Any, List, Tuple
@@ -38,6 +38,25 @@ def _escape_ffmpeg_path(path: str) -> str:
     """Escapes backslashes and special chars in file paths for FFmpeg filtergraphs."""
     escaped = path.replace("\\", "/").replace(":", "\\:")
     return repr(escaped).strip("'")
+
+
+def _check_disk_space_for_render(output_path: str, min_mb: float = 200.0) -> bool:
+    """Check if there's enough disk space for render output. Returns True if OK."""
+    try:
+        target_dir = os.path.dirname(output_path) or "."
+        _, _, free = shutil.disk_usage(target_dir)
+        free_mb = free / (1024 * 1024)
+        if free_mb < min_mb:
+            logger.error(
+                "❌ DISK SPACE CRITICAL: Only %.0f MB free (need %.0f MB minimum). Render skipped!",
+                free_mb, min_mb
+            )
+            return False
+        logger.info("💾 Disk space OK: %.0f MB free", free_mb)
+        return True
+    except Exception as e:
+        logger.warning("Could not check disk space: %s", str(e))
+        return True  # Proceed anyway if check fails
 
 
 def _get_video_info(video_path: str) -> tuple:
@@ -63,6 +82,45 @@ def _get_video_info(video_path: str) -> tuple:
     return 1920, 1080, dur, fps
 
 
+def _run_ffmpeg_with_logging(cmd: list, label: str, timeout: int = 600) -> bool:
+    """
+    Runs an FFmpeg command, captures stderr, and logs it on failure.
+    Returns True if the command succeeded, False otherwise.
+    """
+    logger.info("🎬 [%s] Executing FFmpeg command...", label)
+    logger.debug("FFmpeg cmd: %s", " ".join(cmd))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout
+        )
+
+        if result.returncode != 0:
+            stderr_tail = (result.stderr or "")[-1500:]
+            logger.error(
+                "❌ [%s] FFmpeg FAILED (exit code %d). Last 1500 chars of stderr:\n%s",
+                label, result.returncode, stderr_tail
+            )
+            return False
+
+        logger.info("✅ [%s] FFmpeg completed successfully.", label)
+        return True
+
+    except subprocess.TimeoutExpired:
+        logger.error("❌ [%s] FFmpeg TIMED OUT after %d seconds!", label, timeout)
+        return False
+    except MemoryError:
+        logger.error("❌ [%s] FFmpeg OUT OF MEMORY! VPS RAM exhausted.", label)
+        return False
+    except Exception as e:
+        logger.error("❌ [%s] FFmpeg unexpected error: %s", label, str(e))
+        return False
+
+
 def render_vertical_shorts(
     input_video: Union[str, "MediaInput"],
     start_time: float,
@@ -72,6 +130,9 @@ def render_vertical_shorts(
 ) -> bool:
     """
     Renders a 100% Full-Screen 9:16 Vertical Short (1080x1920) for Podcast mode.
+    Optimized for VPS 2GB RAM with ultra-light settings.
+
+    Strategy: Try split-screen first, if it fails, try ultra-light fallback (simple crop).
     """
     media = input_video if isinstance(input_video, MediaInput) else MediaInput(path=input_video, is_presliced=False)
     v_path = media.path
@@ -79,6 +140,10 @@ def render_vertical_shorts(
 
     if not is_url and not os.path.exists(v_path):
         logger.error("Input video file does not exist: %s", v_path)
+        return False
+
+    # Pre-check disk space
+    if not _check_disk_space_for_render(output_path):
         return False
 
     in_w, in_h, in_dur, in_fps = _get_video_info(v_path)
@@ -115,6 +180,7 @@ def render_vertical_shorts(
             "-reconnect_delay_max", "5"
         ]
 
+    # === ATTEMPT 1: Split-screen render (ultrafast, 1 thread, CRF 23) ===
     cmd = ["ffmpeg", "-y"]
     cmd.extend(input_args)
     cmd.extend([
@@ -125,22 +191,61 @@ def render_vertical_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "20",
+        "-preset", "ultrafast",
+        "-crf", "23",
         "-pix_fmt", "yuv420p",
-        "-threads", "2",
+        "-threads", "1",
         "-movflags", "+faststart",
         "-shortest",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "96k",
         output_path
     ])
-    try:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=900)
+
+    success = _run_ffmpeg_with_logging(cmd, "Podcast Split-Screen", timeout=600)
+
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) >= 50000:
         return True
-    except Exception as e:
-        logger.error("Podcast split render failed: %s", str(e))
-        return False
+
+    # === ATTEMPT 2: Ultra-light fallback (simple center crop, NO split-screen) ===
+    logger.warning("⚠️ Split-screen render failed. Trying ultra-light center-crop fallback...")
+
+    # Clean up failed output
+    if os.path.exists(output_path):
+        try:
+            os.remove(output_path)
+        except Exception:
+            pass
+
+    # Simple center crop to 9:16 — minimal memory usage
+    simple_filter = "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920:flags=fast_bilinear"
+
+    fallback_cmd = ["ffmpeg", "-y"]
+    fallback_cmd.extend(input_args)
+    fallback_cmd.extend([
+        "-ss", f"{render_start:.2f}",
+        "-t", f"{render_duration:.2f}",
+        "-i", v_path,
+        "-vf", simple_filter,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "26",
+        "-pix_fmt", "yuv420p",
+        "-threads", "1",
+        "-movflags", "+faststart",
+        "-c:a", "aac",
+        "-b:a", "96k",
+        output_path
+    ])
+
+    success = _run_ffmpeg_with_logging(fallback_cmd, "Podcast Ultra-Light Fallback", timeout=600)
+
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) >= 50000:
+        logger.info("✅ Ultra-light fallback render succeeded: %s", output_path)
+        return True
+
+    logger.error("❌ ALL render attempts failed for: %s", output_path)
+    return False
 
 
 def render_gaming_split_shorts(
@@ -156,6 +261,7 @@ def render_gaming_split_shorts(
 ) -> bool:
     """
     2026 Production-Grade Gaming Split-Screen Renderer (1080x1920).
+    Optimized for VPS 2GB RAM with 3-tier fallback strategy.
     """
     media = input_video if isinstance(input_video, MediaInput) else MediaInput(path=input_video, is_presliced=False)
     v_path = media.path
@@ -163,6 +269,10 @@ def render_gaming_split_shorts(
 
     if not is_url and not os.path.exists(v_path):
         logger.error("Input video file does not exist: %s", v_path)
+        return False
+
+    # Pre-check disk space
+    if not _check_disk_space_for_render(output_path):
         return False
 
     in_w, in_h, in_dur, in_fps = _get_video_info(v_path)
@@ -236,6 +346,9 @@ def render_gaming_split_shorts(
             "-reconnect_delay_max", "5"
         ]
 
+    # === ATTEMPT 1: Gaming Split-Screen (ultrafast, 1 thread, CRF 23) ===
+    logger.info("Executing 2026 Gaming Split-Screen render (ultrafast, 1-thread, VPS 2GB optimized)...")
+
     cmd = ["ffmpeg", "-y"]
     cmd.extend(input_args)
     cmd.extend([
@@ -246,61 +359,98 @@ def render_gaming_split_shorts(
         "-map", "[outv]",
         "-map", "0:a?",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "20",
+        "-preset", "ultrafast",
+        "-crf", "23",
         "-pix_fmt", "yuv420p",
-        "-threads", "2",
+        "-threads", "1",
         "-movflags", "+faststart",
         "-shortest",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "96k",
         output_path
     ])
 
-    logger.info("Executing 2026 Production Gaming Split-Screen render (preset veryfast, 2GB VPS optimized)...")
-    try:
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True,
-            timeout=900
-        )
+    success = _run_ffmpeg_with_logging(cmd, "Gaming Split-Screen Primary", timeout=600)
+
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) >= 50000:
         logger.info("Gaming Split-Screen render completed successfully: %s", output_path)
         return True
-    except subprocess.CalledProcessError as e:
-        err_msg = e.stderr[-600:] if e.stderr else str(e)
-        logger.warning("Gaming Split-Screen primary render failed (%s). Retrying minimal fallback...", err_msg)
 
-        # Minimal fallback
-        fallback_cmd = [
-            "ffmpeg", "-y",
-            "-ss", f"{render_start:.2f}",
-            "-t", f"{render_duration:.2f}",
-            "-i", v_path,
-            "-filter_complex", filter_complex,
-            "-c:v", "libx264",
-            "-preset", "superfast",
-            "-crf", "22",
-            "-threads", "1",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            output_path
-        ]
+    # === ATTEMPT 2: Simplified split-screen (no padding, simpler filter) ===
+    logger.warning("⚠️ Primary Gaming render failed. Trying simplified split-screen...")
 
+    if os.path.exists(output_path):
         try:
-            subprocess.run(
-                fallback_cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True,
-                timeout=900
-            )
-            logger.info("Gaming Split-Screen fallback render completed: %s", output_path)
-            return True
-        except Exception as fb_ex:
-            raise RuntimeError(f"Fallback Gaming Split-Screen error: {str(fb_ex)}") from fb_ex
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during Gaming Split-Screen render: {str(e)}") from e
+            os.remove(output_path)
+        except Exception:
+            pass
+
+    # Simpler filter: just split left-half / right-half without padding
+    simple_split_filter = (
+        "[0:v]crop=iw/3:ih:0:0,scale=1080:824:flags=fast_bilinear[top];"
+        "[0:v]crop=iw*2/3:ih:iw/3:0,scale=1080:1096:flags=fast_bilinear,crop=1080:1096[bottom];"
+        "[top][bottom]vstack=inputs=2[outv]"
+    )
+
+    fallback1_cmd = ["ffmpeg", "-y"]
+    fallback1_cmd.extend(input_args)
+    fallback1_cmd.extend([
+        "-ss", f"{render_start:.2f}",
+        "-t", f"{render_duration:.2f}",
+        "-i", v_path,
+        "-filter_complex", simple_split_filter,
+        "-map", "[outv]",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "25",
+        "-threads", "1",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "96k",
+        output_path
+    ])
+
+    success = _run_ffmpeg_with_logging(fallback1_cmd, "Gaming Simplified Split", timeout=600)
+
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) >= 50000:
+        logger.info("✅ Simplified split-screen fallback succeeded: %s", output_path)
+        return True
+
+    # === ATTEMPT 3: Ultra-light fallback (simple center crop, NO split-screen at all) ===
+    logger.warning("⚠️ All split-screen renders failed. Trying ultra-light center-crop (NO split)...")
+
+    if os.path.exists(output_path):
+        try:
+            os.remove(output_path)
+        except Exception:
+            pass
+
+    simple_crop_filter = "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920:flags=fast_bilinear"
+
+    fallback2_cmd = ["ffmpeg", "-y"]
+    fallback2_cmd.extend(input_args)
+    fallback2_cmd.extend([
+        "-ss", f"{render_start:.2f}",
+        "-t", f"{render_duration:.2f}",
+        "-i", v_path,
+        "-vf", simple_crop_filter,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "26",
+        "-pix_fmt", "yuv420p",
+        "-threads", "1",
+        "-movflags", "+faststart",
+        "-c:a", "aac",
+        "-b:a", "96k",
+        output_path
+    ])
+
+    success = _run_ffmpeg_with_logging(fallback2_cmd, "Gaming Ultra-Light Fallback", timeout=600)
+
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) >= 50000:
+        logger.info("✅ Ultra-light center-crop fallback succeeded: %s", output_path)
+        return True
+
+    logger.error("❌ ALL 3 render attempts FAILED for: %s", output_path)
+    return False

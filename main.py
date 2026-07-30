@@ -10,6 +10,7 @@ import time
 import glob
 import shutil
 import logging
+import traceback as tb_module
 from typing import List, Dict, Any, Optional
 
 from config import (
@@ -65,17 +66,20 @@ def cleanup_temp_workspace() -> None:
                 logger.warning("Failed to remove temp file '%s': %s", filepath, str(e))
 
 
-def ensure_disk_space(path: Optional[str] = None, minimum_gb: float = 8.0) -> None:
+def ensure_disk_space(path: Optional[str] = None, minimum_gb: float = 2.0) -> None:
     """Verifies that the VPS has at least minimum_gb free disk space before proceeding."""
     check_path = path or str(TEMP_DIR)
     try:
-        _, _, free = shutil.disk_usage(check_path)
+        total, used, free = shutil.disk_usage(check_path)
         free_gb = free / (1024 ** 3)
+        total_gb = total / (1024 ** 3)
+        logger.info("💾 Disk space: %.1f GB free / %.1f GB total", free_gb, total_gb)
         if free_gb < minimum_gb:
             raise RuntimeError(f"Ruang disk tersisa {free_gb:.1f} GB; minimum yang diperlukan {minimum_gb:.1f} GB.")
     except Exception as e:
         if "Ruang disk tersisa" in str(e):
             raise e
+        logger.warning("Could not check disk space: %s", str(e))
 
 
 def process_single_video(
@@ -107,7 +111,6 @@ def process_single_video(
     ensure_disk_space(str(TEMP_DIR), MINIMUM_FREE_DISK_GB)
 
     logger.info("==================================================")
-    import traceback
     from core.db_manager import add_system_log
 
     logger.info("Processing Candidate Video: %s (%s)", video_title, video_url)
@@ -137,7 +140,7 @@ def process_single_video(
                 _, audio_path = YouTubeFetcher.download_audio(video_url)
                 transcript_data = groq_client.transcribe_audio(audio_path)
             except Exception as audio_err:
-                tb_audio = traceback.format_exc()
+                tb_audio = tb_module.format_exc()
                 err_msg = f"Gagal mengunduh/transkrip audio: {str(audio_err)}"
                 logger.warning(err_msg)
                 add_system_log(video_id, "ERROR", "[STEP 2/10]", err_msg, tb_audio)
@@ -278,6 +281,18 @@ def process_single_video(
             # Audio peaks for this specific clip range
             r_peaks = detect_audio_reaction_peaks(audio_path, start_sec, end_sec) if (audio_path and os.path.exists(audio_path)) else None
 
+            # Pre-render disk check
+            try:
+                _, _, free_bytes = shutil.disk_usage(str(CLIPS_DIR))
+                free_mb = free_bytes / (1024 * 1024)
+                if free_mb < 200:
+                    warn_disk = f"⚠️ Disk space sangat rendah ({free_mb:.0f} MB). Skip render klip {clip_idx}."
+                    logger.warning(warn_disk)
+                    add_system_log(video_id, "WARNING", "[STEP 10/10]", warn_disk)
+                    continue
+            except Exception:
+                pass
+
             # STEP 10: Render
             clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
             output_clip_path = str(CLIPS_DIR / clip_filename)
@@ -315,8 +330,9 @@ def process_single_video(
                         subtitle_path=None
                     )
 
-                if render_success and os.path.exists(output_clip_path) and os.path.getsize(output_clip_path) >= 100000:
+                if render_success and os.path.exists(output_clip_path) and os.path.getsize(output_clip_path) >= 50000:
                     clip_id = f"{video_id}_{int(start_sec)}"
+                    clip_size_mb = os.path.getsize(output_clip_path) / (1024 * 1024)
                     save_clip(
                         clip_id=clip_id,
                         video_id=video_id,
@@ -331,15 +347,25 @@ def process_single_video(
                     rendered_count += 1
                     reason = clip_meta.get("selection_reason", "multimodal fusion")
                     add_system_log(video_id, "INFO", "[STEP 10/10]",
-                                   f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}) berhasil! Alasan: {reason}")
+                                   f"🎉 Klip [{clip_idx}/{total_extracted}] '{title}' (Skor {v_score}, {clip_size_mb:.1f} MB) berhasil! Alasan: {reason}")
                 else:
-                    err_reason = f"Render returned success={render_success}, file_exists={os.path.exists(output_clip_path)}"
-                    logger.warning("Render output invalid for clip %d: %s", clip_idx, err_reason)
-                    add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render klip {clip_idx} tidak menghasilkan file valid: {err_reason}")
+                    file_exists = os.path.exists(output_clip_path)
+                    file_size = os.path.getsize(output_clip_path) if file_exists else 0
+                    err_reason = f"render_success={render_success}, file_exists={file_exists}, file_size={file_size} bytes"
+                    logger.error("❌ Render output invalid for clip %d: %s", clip_idx, err_reason)
+                    add_system_log(video_id, "ERROR", "[STEP 10/10]",
+                                   f"❌ Render klip {clip_idx} GAGAL! Detail: {err_reason}. Cek log FFmpeg di atas untuk error spesifik.")
+                    # Cleanup failed output file
+                    if file_exists and file_size < 50000:
+                        try:
+                            os.remove(output_clip_path)
+                        except Exception:
+                            pass
             except Exception as render_err:
-                tb_render = traceback.format_exc()
-                logger.warning("Render failed for clip %d: %s\n%s", clip_idx, str(render_err)[:200], tb_render)
-                add_system_log(video_id, "WARNING", "[STEP 10/10]", f"Render gagal untuk klip {clip_idx}: {str(render_err)[:200]}", tb_render)
+                tb_render = tb_module.format_exc()
+                logger.error("❌ Render EXCEPTION for clip %d: %s\n%s", clip_idx, str(render_err)[:500], tb_render)
+                add_system_log(video_id, "ERROR", "[STEP 10/10]",
+                               f"❌ Render EXCEPTION klip {clip_idx}: {str(render_err)[:500]}", tb_render)
 
         mark_status(video_id, "COMPLETED")
         msg_done = f"🎉 Batch selesai! {rendered_count}/{total_extracted} klip viral berhasil dirender (Multimodal 2026)!"
@@ -348,7 +374,7 @@ def process_single_video(
         return True
 
     except Exception as e:
-        tb_str = traceback.format_exc()
+        tb_str = tb_module.format_exc()
         err_msg = f"Kegagalan kritis pemrosesan video '{video_id}': {str(e)}"
         logger.error("%s\n%s", err_msg, tb_str)
         add_system_log(video_id, "ERROR", "FAILED", err_msg, tb_str)

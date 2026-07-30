@@ -216,19 +216,31 @@ def api_get_video_progress(video_id: str):
             error_message = row["error_message"]
 
     latest_log = logs[0] if logs else {}
-    step = latest_log.get("step", "[STEP 1/6]")
+    step = latest_log.get("step", "[STEP 1/10]")
     message = latest_log.get("message", "Inisialisasi pemrosesan klip...")
     traceback_str = latest_log.get("traceback") or error_message
 
-    percent = 15
-    if "[STEP 1/6]" in step: percent = 15
+    # Map 10-step pipeline to progress percentage
+    percent = 5
+    if "[STEP 1/10]" in step: percent = 10
+    elif "[STEP 2/10]" in step: percent = 20
+    elif "[STEP 3/10]" in step: percent = 30
+    elif "[STEP 4/10]" in step: percent = 40
+    elif "[STEP 5/10]" in step: percent = 50
+    elif "[STEP 6/10]" in step: percent = 55
+    elif "[STEP 7/10]" in step: percent = 65
+    elif "[STEP 8/10]" in step: percent = 75
+    elif "[STEP 9/10]" in step: percent = 85
+    elif "[STEP 10/10]" in step: percent = 95
+    elif status == "COMPLETED": percent = 100
+    elif status == "FAILED": percent = 100
+    # Also handle old 6-step format for backwards compatibility
+    elif "[STEP 1/6]" in step: percent = 15
     elif "[STEP 2/6]" in step: percent = 30
     elif "[STEP 3/6]" in step: percent = 50
     elif "[STEP 4/6]" in step: percent = 65
     elif "[STEP 5/6]" in step: percent = 80
     elif "[STEP 6/6]" in step: percent = 95
-    elif status == "COMPLETED": percent = 100
-    elif status == "FAILED": percent = 100
 
     return {
         "video_id": video_id,
