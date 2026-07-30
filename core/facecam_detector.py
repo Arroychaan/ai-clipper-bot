@@ -91,6 +91,69 @@ def _calculate_skin_density(bgr_crop: Any) -> float:
         return 0.0
 
 
+def _find_brightest_corner(video_path: str, video_width: int, video_height: int) -> Tuple[int, int]:
+    """
+    Smart fallback: Analyzes brightness of the 4 video corners (Top-Left, Top-Right, Bottom-Left, Bottom-Right).
+    Streamer facecams are almost always brightly lit compared to dark game backgrounds.
+    Returns (center_x, center_y) of the brightest corner in original video coordinates.
+    """
+    default_br_x = int(video_width * 0.80)
+    default_br_y = int(video_height * 0.80)
+
+    if cv2 is None or not os.path.exists(video_path):
+        return default_br_x, default_br_y
+
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return default_br_x, default_br_y
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        sample_indices = [int(total_frames * p) for p in [0.2, 0.5, 0.8] if int(total_frames * p) < total_frames]
+
+        cw = int(video_width * 0.25)
+        ch = int(video_height * 0.25)
+
+        corners = {
+            "top-left": ((0, cw), (0, ch), cw // 2, ch // 2),
+            "top-right": ((video_width - cw, video_width), (0, ch), video_width - cw // 2, ch // 2),
+            "bottom-left": ((0, cw), (video_height - ch, video_height), cw // 2, video_height - ch // 2),
+            "bottom-right": ((video_width - cw, video_width), (video_height - ch, video_height), video_width - cw // 2, video_height - ch // 2)
+        }
+
+        corner_scores = {k: 0.0 for k in corners}
+        sample_count = 0
+
+        for idx in sample_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            sample_count += 1
+
+            for name, ((x1, x2), (y1, y2), _, _) in corners.items():
+                crop = gray[y1:y2, x1:x2]
+                corner_scores[name] += float(crop.mean())
+
+        cap.release()
+
+        if sample_count == 0:
+            return default_br_x, default_br_y
+
+        best_corner_name = max(corner_scores, key=lambda k: corner_scores[k])
+        _, _, best_cx, best_cy = corners[best_corner_name]
+        logger.info("💡 Smart corner analysis: Best corner is '%s' (mean brightness: %.1f)",
+                    best_corner_name, corner_scores[best_corner_name] / sample_count)
+
+        return best_cx, best_cy
+
+    except Exception as e:
+        logger.debug("Corner brightness analysis failed: %s", str(e))
+        return default_br_x, default_br_y
+
+
 def _detect_faces_in_frame(
     frame: Any,
     detector: Any,
@@ -99,6 +162,10 @@ def _detect_faces_in_frame(
 ) -> List[Tuple[float, float, float, float, float, float]]:
     """
     Detects all candidate human faces in a single frame.
+
+    Skin density is used as a SCORING FACTOR, not a hard reject filter.
+    High-confidence YuNet DNN detections (conf >= 0.5) are always accepted.
+    Medium-confidence (0.25 <= conf < 0.5) require minimal skin evidence.
 
     Returns list of (center_x, center_y, fw, fh, confidence, skin_density).
     """
@@ -117,13 +184,13 @@ def _detect_faces_in_frame(
             fx, fy, fw, fh = map(int, f[0:4])
             conf = float(f[14])
 
-            if conf < 0.25:
+            if conf < 0.15:
                 continue
 
             fc_x = fx + fw // 2
             fc_y = fy + fh // 2
 
-            # Verify skin tone (only filter out very low confidence non-skin detections)
+            # Calculate skin density for scoring (NOT for hard rejection)
             pad_w = int(fw * 0.5)
             pad_h = int(fh * 0.5)
             x1, y1 = max(0, fx - pad_w), max(0, fy - pad_h)
@@ -131,10 +198,18 @@ def _detect_faces_in_frame(
             face_crop = frame[y1:y2, x1:x2]
             skin_density = _calculate_skin_density(face_crop)
 
-            # High confidence YuNet DNN face detections (conf >= 0.25) are valid faces.
-            # Only apply skin density filter for very low confidence detections (< 0.25).
-            if conf < 0.25 and skin_density < 0.02:
-                continue
+            # Tiered acceptance:
+            # - High confidence (>= 0.5): ALWAYS accept — DNN is confident this is a real face
+            # - Medium confidence (0.25 - 0.5): Accept if ANY skin pixels detected (> 0.01)
+            # - Low confidence (0.15 - 0.25): Accept only with meaningful skin (> 0.03)
+            if conf >= 0.5:
+                pass  # Always accept
+            elif conf >= 0.25:
+                if skin_density < 0.01:
+                    continue
+            else:
+                if skin_density < 0.03:
+                    continue
 
             results.append((float(fc_x), float(fc_y), float(fw), float(fh), conf, skin_density))
 
@@ -219,6 +294,7 @@ def detect_streamer_facecam(
     """
     Static facecam detector (backward compatible).
     Returns a single crop region for the entire clip.
+    Includes 'detected' flag: True = AI face detection, False = brightness fallback guess.
     """
     keyframes = detect_dynamic_facecam_track(video_path, sample_timestamps_sec=sample_timestamps_sec)
 
@@ -226,11 +302,14 @@ def detect_streamer_facecam(
         return {
             "crop_w": 640, "crop_h": 488,
             "crop_x": 0, "crop_y": 0,
-            "detected": False, "position": "top-left"
+            "detected": False, "position": "unknown"
         }
 
     mid = len(keyframes) // 2
     kf = keyframes[mid]
+
+    # Determine if this was a real AI detection or a brightness fallback
+    is_real_detection = kf.confidence > 0.0
 
     if cv2 is not None:
         cap = cv2.VideoCapture(video_path)
@@ -247,10 +326,15 @@ def detect_streamer_facecam(
     else:
         pos = "top-left" if cy < vh * 0.5 else "bottom-left"
 
+    logger.info(
+        "📍 Facecam result: detected=%s, position=%s, crop=(%d,%d,%d,%d), conf=%.2f",
+        is_real_detection, pos, kf.crop_x, kf.crop_y, kf.crop_w, kf.crop_h, kf.confidence
+    )
+
     return {
         "crop_w": kf.crop_w, "crop_h": kf.crop_h,
         "crop_x": kf.crop_x, "crop_y": kf.crop_y,
-        "detected": True, "position": pos
+        "detected": is_real_detection, "position": pos
     }
 
 
@@ -333,12 +417,21 @@ def detect_dynamic_facecam_track(
         all_detected_faces = [f for _, faces in keyframe_faces for f in faces]
 
         if not all_detected_faces:
-            logger.warning("No faces detected in any keyframe. Using fallback bottom-right streamer facecam region.")
-            def_w = int(video_width * 0.35)
+            logger.warning("No faces detected in any keyframe. Using smart corner brightness fallback.")
+            # Smart fallback: find the brightest corner of the video (facecam is usually brighter than dark gameplay)
+            best_corner_x, best_corner_y = _find_brightest_corner(video_path, video_width, video_height)
+            def_w = int(video_width * 0.30)
             def_h = int(def_w * (824 / 1080))
-            # Default to bottom-right of video in padded coordinate space (+500 offset)
-            def_cx_padded = int(video_width * 0.85) + PAD_OFFSET - def_w // 2
-            def_cy_padded = int(video_height * 0.80) + PAD_OFFSET - def_h // 2
+            # Convert to padded coordinate space
+            def_cx_padded = best_corner_x + PAD_OFFSET - def_w // 2
+            def_cy_padded = best_corner_y + PAD_OFFSET - def_h // 2
+            # Clamp to padded boundaries
+            padded_total_w = video_width + 2 * PAD_OFFSET
+            padded_total_h = video_height + 2 * PAD_OFFSET
+            def_cx_padded = max(0, min(padded_total_w - def_w, def_cx_padded))
+            def_cy_padded = max(0, min(padded_total_h - def_h, def_cy_padded))
+            logger.info("💡 Brightness fallback: brightest corner at (%d, %d) -> padded crop (%d, %d, %d, %d)",
+                        best_corner_x, best_corner_y, def_cx_padded, def_cy_padded, def_w, def_h)
             return [CropKeyframe(
                 timestamp_sec=0.0,
                 crop_x=def_cx_padded, crop_y=def_cy_padded,
