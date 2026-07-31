@@ -233,31 +233,22 @@ def _calculate_dead_center_crop(
     target_aspect: float = 824.0 / 1080.0
 ) -> Tuple[int, int, int, int]:
     """
-    2026 Padded Absolute Dead-Center Crop Algorithm.
+    2026 Dead-Center Crop Algorithm in Unpadded Video Space.
 
-    Calculates crop_x, crop_y, crop_w, crop_h relative to a 500px padded frame.
-    Guarantees 100.000% ABSOLUTE DEAD-CENTER positioning of Windah's face,
-    eliminating edge-clamping displacement even when facecam is on video borders.
+    Calculates crop_x, crop_y, crop_w, crop_h relative to the original video dimensions (0..video_width, 0..video_height).
+    Guarantees absolute center positioning of facecam in unpadded coordinate space.
     """
-    # Ultra-tight zoom: 1.15x face width for maximum focus on face + upper chest
     crop_w = max(100.0, fw * zoom_factor)
     crop_h = crop_w * target_aspect
 
-    # Center in 500px padded coordinate space
-    center_x_padded = center_x + PAD_OFFSET
-    center_y_padded = center_y + PAD_OFFSET
-
-    crop_x = int(round(center_x_padded - crop_w / 2.0))
-    crop_y = int(round(center_y_padded - crop_h / 2.0))
+    crop_x = int(round(center_x - crop_w / 2.0))
+    crop_y = int(round(center_y - crop_h / 2.0))
     crop_w = int(round(crop_w))
     crop_h = int(round(crop_h))
 
-    # Clamp to padded image boundaries (video_width + 1000 x video_height + 1000)
-    padded_w = video_width + 2 * PAD_OFFSET
-    padded_h = video_height + 2 * PAD_OFFSET
-
-    crop_x = max(0, min(padded_w - crop_w, crop_x))
-    crop_y = max(0, min(padded_h - crop_h, crop_y))
+    # Clamp to original unpadded image boundaries
+    crop_x = max(0, min(video_width - crop_w, crop_x))
+    crop_y = max(0, min(video_height - crop_h, crop_y))
 
     return crop_x, crop_y, crop_w, crop_h
 
@@ -420,21 +411,16 @@ def detect_dynamic_facecam_track(
             logger.warning("No faces detected in any keyframe. Using smart corner brightness fallback.")
             # Smart fallback: find the brightest corner of the video (facecam is usually brighter than dark gameplay)
             best_corner_x, best_corner_y = _find_brightest_corner(video_path, video_width, video_height)
-            def_w = int(video_width * 0.30)
+            def_w = int(video_width * 0.35)
             def_h = int(def_w * (824 / 1080))
-            # Convert to padded coordinate space
-            def_cx_padded = best_corner_x + PAD_OFFSET - def_w // 2
-            def_cy_padded = best_corner_y + PAD_OFFSET - def_h // 2
-            # Clamp to padded boundaries
-            padded_total_w = video_width + 2 * PAD_OFFSET
-            padded_total_h = video_height + 2 * PAD_OFFSET
-            def_cx_padded = max(0, min(padded_total_w - def_w, def_cx_padded))
-            def_cy_padded = max(0, min(padded_total_h - def_h, def_cy_padded))
-            logger.info("💡 Brightness fallback: brightest corner at (%d, %d) -> padded crop (%d, %d, %d, %d)",
-                        best_corner_x, best_corner_y, def_cx_padded, def_cy_padded, def_w, def_h)
+            # Calculate unpadded crop coordinates centered on the brightest corner
+            def_cx = max(0, min(video_width - def_w, best_corner_x - def_w // 2))
+            def_cy = max(0, min(video_height - def_h, best_corner_y - def_h // 2))
+            logger.info("💡 Brightness fallback: brightest corner at (%d, %d) -> unpadded crop (%d, %d, %d, %d)",
+                        best_corner_x, best_corner_y, def_cx, def_cy, def_w, def_h)
             return [CropKeyframe(
                 timestamp_sec=0.0,
-                crop_x=def_cx_padded, crop_y=def_cy_padded,
+                crop_x=def_cx, crop_y=def_cy,
                 crop_w=def_w, crop_h=def_h,
                 confidence=0.0, skin_density=0.0
             )]

@@ -307,30 +307,26 @@ def render_gaming_split_shorts(
     else:
         fc = facecam_coords or {"crop_w": 640, "crop_h": 533, "crop_x": 0, "crop_y": 0}
 
-    raw_cw = int(fc.get("crop_w", 640))
-    raw_ch = int(fc.get("crop_h", 533))
-    raw_cx = int(fc.get("crop_x", 0))
-    raw_cy = int(fc.get("crop_y", 0))
+    raw_cw = int(fc.get("crop_w", int(in_w * 0.35)))
+    raw_ch = int(fc.get("crop_h", int(raw_cw * 824 / 1080)))
+    raw_cx = int(fc.get("crop_x", int(in_w * 0.65)))
+    raw_cy = int(fc.get("crop_y", int(in_h * 0.55)))
 
-    # If coordinates are zero/uninitialized, default to Windah's standard bottom-right facecam region in padded space
-    if raw_cx == 0 and raw_cy == 0:
-        raw_cw = int(in_w * 0.35)
-        raw_ch = int(raw_cw * 824 / 1080)
-        raw_cx = int(in_w * 0.85) + 500 - raw_cw // 2
-        raw_cy = int(in_h * 0.80) + 500 - raw_ch // 2
+    # Clamp unpadded crop dimensions and position to actual video size
+    cw = max(50, min(in_w, raw_cw))
+    ch = max(50, min(in_h, raw_ch))
+    cx_unpadded = max(0, min(in_w - cw, raw_cx))
+    cy_unpadded = max(0, min(in_h - ch, raw_cy))
 
-    padded_w = in_w + 1000
-    padded_h = in_h + 1000
-
-    cw = max(50, min(padded_w, raw_cw))
-    ch = max(50, min(padded_h, raw_ch))
-    cx = max(0, min(padded_w - cw, raw_cx))
-    cy = max(0, min(padded_h - ch, raw_cy))
+    # Offset by +500 to position inside FFmpeg padded image (pad=w=iw+1000:h=ih+1000:x=500:y=500)
+    PAD_OFFSET = 500
+    cx_padded = cx_unpadded + PAD_OFFSET
+    cy_padded = cy_unpadded + PAD_OFFSET
 
     # TOP (3 parts = 824px): 500px Padded Facecam crop → scale to 1080x824 → 100% ABSOLUTE DEAD CENTER
     top_filter = (
         f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
-        f"[padded]crop={cw}:{ch}:{cx}:{cy},"
+        f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},"
         f"scale=1080:824:flags=bicubic"
         f"[top]"
     )
@@ -411,7 +407,7 @@ def render_gaming_split_shorts(
     # Simpler filter: use detected facecam crop for top half, center crop gameplay for bottom half
     simple_split_filter = (
         f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
-        f"[padded]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=fast_bilinear[top];"
+        f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},scale=1080:824:flags=fast_bilinear[top];"
         f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1096[bottom];"
         f"[top][bottom]vstack=inputs=2[outv]"
     )
