@@ -293,6 +293,12 @@ def process_single_video(
             except Exception:
                 pass
 
+            # Pre-render facecam check: Auto-detect if video has a streamer facecam (Windah Basudara style)
+            facecam_coords = detect_streamer_facecam(video_path)
+            has_facecam = facecam_coords.get("detected", False)
+            current_active_mode = get_setting("active_mode", "WINDAH").upper().strip()
+            use_gaming_render = force_gaming_mode or has_facecam or (current_active_mode == "WINDAH")
+
             # STEP 10: Render
             clip_filename = f"clip_{video_id}_{int(start_sec)}.mp4"
             output_clip_path = str(CLIPS_DIR / clip_filename)
@@ -301,12 +307,11 @@ def process_single_video(
             media_input = MediaInput(path=video_path, is_presliced=False, source_start=start_sec)
 
             try:
-                if force_gaming_mode:
+                if use_gaming_render:
                     msg_render = f"🎮 [{clip_idx}/{total_extracted}] Merender Gaming Split-Screen 2026 (Skor {v_score}) -> {clip_filename}..."
                     logger.info("👉 [STEP 10/10] %s", msg_render)
                     add_system_log(video_id, "INFO", "[STEP 10/10]", msg_render)
 
-                    facecam_coords = detect_streamer_facecam(video_path)
                     render_success = render_gaming_split_shorts(
                         input_video=media_input,
                         start_time=start_sec,

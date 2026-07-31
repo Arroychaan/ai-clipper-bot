@@ -135,10 +135,10 @@ def api_clip_custom_url(payload: CustomUrlPayload, background_tasks: BackgroundT
             from core.groq_manager import ResilientGroqClient
             from core.db_manager import get_setting
             groq_client = ResilientGroqClient()
-            active_mode = get_setting("active_mode", "PODCAST")
+            active_mode = get_setting("active_mode", "WINDAH").upper().strip()
             item = {"id": v_id, "video_id": v_id, "title": f"Custom VOD ({v_id})", "url": clean_url}
 
-            process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
+            process_single_video(item, groq_client, force_gaming_mode=(active_mode != "PODCAST"))
         except Exception as e:
             import traceback
             tb_str = traceback.format_exc()
@@ -316,9 +316,9 @@ def api_regenerate_vps_clip(video_id: str, background_tasks: BackgroundTasks):
             from core.groq_manager import ResilientGroqClient
             from core.db_manager import get_setting
             groq_client = ResilientGroqClient()
-            active_mode = get_setting("active_mode", "PODCAST")
+            active_mode = get_setting("active_mode", "WINDAH").upper().strip()
             item = {"id": video_id, "video_id": video_id, "title": f"Cached VOD ({video_id})", "url": clean_url}
-            process_single_video(item, groq_client, force_gaming_mode=(active_mode == "WINDAH"))
+            process_single_video(item, groq_client, force_gaming_mode=(active_mode != "PODCAST"))
         except Exception as e:
             import traceback
             tb_str = traceback.format_exc()

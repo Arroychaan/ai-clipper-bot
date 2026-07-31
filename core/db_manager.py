@@ -104,8 +104,8 @@ def init_db() -> None:
             );
             """
         )
-        # Ensure default active_mode setting is initialized
-        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_mode', 'PODCAST')")
+        # Ensure default active_mode setting is initialized (Default to WINDAH for gaming mode)
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_mode', 'WINDAH')")
         conn.commit()
     logger.info("SQLite database initialized at: %s", DB_PATH)
 

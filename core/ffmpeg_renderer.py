@@ -150,6 +150,22 @@ def render_vertical_shorts(
     render_start = 0.0 if media.is_presliced else max(0.0, start_time)
     render_duration = max(5.0, duration)
 
+    # Auto-detect if video is a gaming stream with facecam (Windah Basudara style)
+    try:
+        from core.facecam_detector import detect_streamer_facecam
+        fc_info = detect_streamer_facecam(v_path)
+        if fc_info.get("detected", False):
+            logger.info("🎥 Streamer facecam detected in video! Auto-routing to Gaming Split-Screen renderer...")
+            return render_gaming_split_shorts(
+                input_video=input_video,
+                start_time=start_time,
+                duration=duration,
+                output_path=output_path,
+                facecam_coords=fc_info
+            )
+    except Exception as fc_err:
+        logger.debug("Facecam check in render_vertical_shorts bypassed: %s", str(fc_err))
+
     logger.info(
         "Rendering Podcast Split-Screen 9:16 (Start: %.2fs, Duration: %.2fs) -> %s",
         render_start, render_duration, output_path
