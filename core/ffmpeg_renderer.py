@@ -60,26 +60,46 @@ def _check_disk_space_for_render(output_path: str, min_mb: float = 200.0) -> boo
 
 
 def _get_video_info(video_path: str) -> tuple:
-    """Gets exact (width, height, duration, fps) of a video file or stream URL."""
+    """Gets exact (width, height, duration, fps) of a video file or stream URL using cv2 and ffprobe."""
     w, h, dur, fps = 1920, 1080, 0.0, 30.0
-    if video_path.startswith("http://") or video_path.startswith("https://"):
-        return 1920, 1080, 0.0, 30.0
+
+    if not (video_path.startswith("http://") or video_path.startswith("https://")) and os.path.exists(video_path):
+        try:
+            import cv2  # type: ignore
+            cap = cv2.VideoCapture(video_path)
+            if cap.isOpened():
+                pw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                ph = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                pfps = max(1.0, cap.get(cv2.CAP_PROP_FPS) or 30.0)
+                frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+                pdur = frames / pfps if pfps > 0 else 0.0
+                cap.release()
+                if pw > 0 and ph > 0:
+                    return pw, ph, pdur, pfps
+        except Exception:
+            pass
+
+    # ffprobe probe for exact stream dimensions
     try:
-        import cv2  # type: ignore
-        cap = cv2.VideoCapture(video_path)
-        if cap.isOpened():
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
-            fps = max(1.0, cap.get(cv2.CAP_PROP_FPS) or 30.0)
-            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
-            dur = frames / fps
-            cap.release()
-            if w > 0 and h > 0:
-                return w, h, dur, fps
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,r_frame_rate,duration",
+            "-of", "csv=p=0",
+            video_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        if res.returncode == 0 and res.stdout.strip():
+            parts = res.stdout.strip().split(",")
+            if len(parts) >= 2:
+                pw = int(parts[0])
+                ph = int(parts[1])
+                if pw > 0 and ph > 0:
+                    w, h = pw, ph
     except Exception:
         pass
 
-    return 1920, 1080, dur, fps
+    return w, h, dur, fps
 
 
 def _run_ffmpeg_with_logging(cmd: list, label: str, timeout: int = 600) -> bool:
@@ -313,22 +333,20 @@ def render_gaming_split_shorts(
     raw_cx = int(fc.get("crop_x", int(in_w * 0.65)))
     raw_cy = int(fc.get("crop_y", int(in_h * 0.55)))
 
-    # Clamp unpadded crop dimensions and position to actual video size
+    # Clamp unpadded crop dimensions and position strictly to actual video size
     cw = max(50, min(in_w, raw_cw))
-    ch = max(50, min(in_h, raw_ch))
-    cx_unpadded = max(0, min(in_w - cw, raw_cx))
-    cy_unpadded = max(0, min(in_h - ch, raw_cy))
+    ch = int(cw * 824 / 1080)
+    if ch > in_h:
+        ch = in_h
+        cw = int(ch * 1080 / 824)
 
-    # Offset by +500 to position inside FFmpeg padded image (pad=w=iw+1000:h=ih+1000:x=500:y=500)
-    PAD_OFFSET = 500
-    cx_padded = cx_unpadded + PAD_OFFSET
-    cy_padded = cy_unpadded + PAD_OFFSET
+    cx = max(0, min(in_w - cw, raw_cx))
+    cy = max(0, min(in_h - ch, raw_cy))
 
-    # TOP (3 parts = 824px): 500px Padded Facecam crop → scale to 1080x824 → 100% ABSOLUTE DEAD CENTER
+    # TOP (3 parts = 824px): Direct Facecam crop from video stream → scale to 1080x824 (zero black padding)
     split_filter = "[0:v]split=2[vtop_in][vbot_in]"
     top_filter = (
-        f"[vtop_in]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
-        f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},"
+        f"[vtop_in]crop={cw}:{ch}:{cx}:{cy},"
         f"scale=1080:824:flags=bicubic"
         f"[top]"
     )
@@ -409,8 +427,7 @@ def render_gaming_split_shorts(
     # Simpler filter: use detected facecam crop for top half, center crop gameplay for bottom half
     simple_split_filter = (
         f"[0:v]split=2[vtop_in][vbot_in];"
-        f"[vtop_in]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
-        f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},scale=1080:824:flags=fast_bilinear[top];"
+        f"[vtop_in]crop={cw}:{ch}:{cx}:{cy},scale=1080:824:flags=fast_bilinear[top];"
         f"[vbot_in]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1096[bottom];"
         f"[top][bottom]vstack=inputs=2[outv]"
     )
