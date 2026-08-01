@@ -171,8 +171,9 @@ def render_vertical_shorts(
         render_start, render_duration, output_path
     )
 
-    top_filter = "[0:v]crop=iw/2:ih:0:0,scale=w=1080:h=824:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:824[top]"
-    bottom_filter = "[0:v]crop=iw/2:ih:iw/2:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:1096[bottom]"
+    split_filter = "[0:v]split=2[vtop_in][vbot_in]"
+    top_filter = "[vtop_in]crop=iw/2:ih:0:0,scale=w=1080:h=824:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:824[top]"
+    bottom_filter = "[vbot_in]crop=iw/2:ih:iw/2:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=bicubic,crop=1080:1096[bottom]"
     stack_filter = "[top][bottom]vstack=inputs=2[stacked]"
     
     divider_filter = (
@@ -180,7 +181,7 @@ def render_vertical_shorts(
         f"drawbox=y=822:color=white@0.95:width=iw:height=4:t=fill[outv]"
     )
 
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
+    filter_complex = f"{split_filter}; {top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
     input_args = []
     if is_url:
@@ -324,8 +325,9 @@ def render_gaming_split_shorts(
     cy_padded = cy_unpadded + PAD_OFFSET
 
     # TOP (3 parts = 824px): 500px Padded Facecam crop → scale to 1080x824 → 100% ABSOLUTE DEAD CENTER
+    split_filter = "[0:v]split=2[vtop_in][vbot_in]"
     top_filter = (
-        f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
+        f"[vtop_in]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
         f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},"
         f"scale=1080:824:flags=bicubic"
         f"[top]"
@@ -335,7 +337,7 @@ def render_gaming_split_shorts(
     gameplay_crop_w = int(in_w * 0.75)
     gameplay_crop_x = (in_w - gameplay_crop_w) // 2
     bottom_filter = (
-        f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,"
+        f"[vbot_in]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,"
         f"scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=bicubic,"
         f"crop=1080:1096"
         f"[bottom]"
@@ -349,7 +351,7 @@ def render_gaming_split_shorts(
         f"drawbox=y=822:color=white@0.95:width=iw:height=4:t=fill[outv]"
     )
 
-    filter_complex = f"{top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
+    filter_complex = f"{split_filter}; {top_filter}; {bottom_filter}; {stack_filter}; {divider_filter}"
 
     input_args = []
     if is_url:
@@ -406,9 +408,10 @@ def render_gaming_split_shorts(
 
     # Simpler filter: use detected facecam crop for top half, center crop gameplay for bottom half
     simple_split_filter = (
-        f"[0:v]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
+        f"[0:v]split=2[vtop_in][vbot_in];"
+        f"[vtop_in]pad=w=iw+1000:h=ih+1000:x=500:y=500:color=black[padded];"
         f"[padded]crop={cw}:{ch}:{cx_padded}:{cy_padded},scale=1080:824:flags=fast_bilinear[top];"
-        f"[0:v]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1096[bottom];"
+        f"[vbot_in]crop={gameplay_crop_w}:{in_h}:{gameplay_crop_x}:0,scale=w=1080:h=1096:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1096[bottom];"
         f"[top][bottom]vstack=inputs=2[outv]"
     )
 
